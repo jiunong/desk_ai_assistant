@@ -1,0 +1,8 @@
+{
+  "id": "doc-summarize",
+  "name": "文档摘要",
+  "description": "对拖入的文档进行结构化摘要分析",
+  "triggers": ["摘要", "总结", "summarize", ".pdf", ".docx", ".ppt", ".pptx"],
+  "handler": "summarize",
+  "handlerModule": "doc-summarize.mjs"
+}

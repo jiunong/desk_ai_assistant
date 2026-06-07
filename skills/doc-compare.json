@@ -1,0 +1,8 @@
+{
+  "id": "doc-compare",
+  "name": "多文档对比",
+  "description": "对比多份文档的异同点",
+  "triggers": ["对比", "比较", "compare"],
+  "handler": "compare",
+  "handlerModule": "doc-compare.mjs"
+}
