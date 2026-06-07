@@ -19,7 +19,62 @@ export default function App() {
   const [meta, setMeta] = useState<{ usedSkills?: string[]; usedMcpTools?: string[] }>({})
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const sessionIdRef = useRef(sessionId)
   const canChat = Boolean(sessionId)
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId
+  }, [sessionId])
+
+  useEffect(() => {
+    return window.dialogApi.onChatStream(({ sessionId: sid, delta }) => {
+      if (sid !== sessionIdRef.current) return
+      setMessages((prev) => {
+        const last = prev[prev.length - 1]
+        if (last?.role !== 'assistant') return prev
+        const copy = [...prev]
+        copy[copy.length - 1] = { ...last, content: last.content + delta }
+        return copy
+      })
+    })
+  }, [])
+
+  useEffect(() => {
+    return window.dialogApi.onStreamEnd(({ sessionId: sid, reply, error, usedMcpTools, usedSkills }) => {
+      if (sid !== sessionIdRef.current) return
+      if (error) {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last?.role === 'assistant' && !last.content) {
+            return prev.slice(0, -1)
+          }
+          return prev
+        })
+        setError(error)
+      } else if (reply) {
+        setMessages((prev) => {
+          const copy = [...prev]
+          const last = copy[copy.length - 1]
+          if (last?.role === 'assistant') {
+            copy[copy.length - 1] = {
+              ...last,
+              content: reply,
+              createdAt: new Date().toISOString()
+            }
+          }
+          return copy
+        })
+      }
+      if (usedMcpTools?.length || usedSkills?.length) {
+        setMeta((m) => ({
+          ...m,
+          ...(usedMcpTools?.length ? { usedMcpTools } : {}),
+          ...(usedSkills?.length ? { usedSkills } : {})
+        }))
+      }
+      setLoading(false)
+    })
+  }, [])
 
   const scrollToBottom = () => {
     requestAnimationFrame(() => {
@@ -28,11 +83,16 @@ export default function App() {
   }
 
   useEffect(() => {
-    window.dialogApi.onInit((payload) => {
+    return window.dialogApi.onInit((payload) => {
+      sessionIdRef.current = payload.sessionId
       setSessionId(payload.sessionId)
       setFileNames(payload.fileNames)
       setMessages(payload.messages)
       setMeta(payload.meta ?? {})
+      const last = payload.messages[payload.messages.length - 1]
+      if (last?.role === 'assistant' && !last.content) {
+        setLoading(true)
+      }
     })
   }, [])
 
@@ -137,14 +197,26 @@ export default function App() {
       createdAt: new Date().toISOString(),
       ...(files.length ? { attachedFileNames: files.map(fileNameFromPath) } : {})
     }
-    setMessages((prev) => [...prev, userMsg])
+    setMessages((prev) => [
+      ...prev,
+      userMsg,
+      { role: 'assistant', content: '', createdAt: new Date().toISOString() }
+    ])
 
     try {
       const result = await window.dialogApi.chat(sessionId, displayContent, files)
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: result.reply, createdAt: new Date().toISOString() }
-      ])
+      setMessages((prev) => {
+        const copy = [...prev]
+        const last = copy[copy.length - 1]
+        if (last?.role === 'assistant') {
+          copy[copy.length - 1] = {
+            ...last,
+            content: result.reply,
+            createdAt: new Date().toISOString()
+          }
+        }
+        return copy
+      })
       if (result.fileNames.length) {
         setFileNames(result.fileNames)
       }
@@ -152,6 +224,13 @@ export default function App() {
         setMeta((m) => ({ ...m, usedMcpTools: result.usedMcpTools }))
       }
     } catch (err) {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1]
+        if (last?.role === 'assistant' && !last.content) {
+          return prev.slice(0, -1)
+        }
+        return prev
+      })
       setError(err instanceof Error ? err.message : '发送失败')
     } finally {
       setLoading(false)
@@ -189,7 +268,10 @@ export default function App() {
       </div>
 
       <div className="dialog-body" ref={scrollRef}>
-        {messages.map((msg, i) => (
+        {messages.map((msg, i) => {
+          const isStreaming =
+            loading && i === messages.length - 1 && msg.role === 'assistant' && !msg.content
+          return (
           <div key={i} className={`msg-bubble ${msg.role}`}>
             <div className="msg-label">{msg.role === 'user' ? '你' : '小智'}</div>
             <div className="msg-content">
@@ -209,21 +291,19 @@ export default function App() {
                   ))}
                 </div>
               ) : null}
-              <MarkdownContent content={msg.content} />
+              {isStreaming ? (
+                <div className="typing">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              ) : msg.content ? (
+                <MarkdownContent content={msg.content} />
+              ) : null}
             </div>
           </div>
-        ))}
-
-        {loading && (
-          <div className="msg-bubble assistant loading-bubble">
-            <div className="msg-label">小智</div>
-            <div className="typing">
-              <span />
-              <span />
-              <span />
-            </div>
-          </div>
-        )}
+          )
+        })}
 
         {(meta.usedSkills?.length || meta.usedMcpTools?.length) ? (
           <div className="meta-bar">

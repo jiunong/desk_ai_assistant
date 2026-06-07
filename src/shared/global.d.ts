@@ -26,8 +26,18 @@ export interface DialogApi {
   resizeWindow: (deltaW: number, deltaH: number) => void
   resolvePaths: (files: File[]) => string[]
   saveTempFiles: (files: { name: string; data: string }[]) => Promise<string[]>
-  onInit: (cb: (payload: DialogInitPayload) => void) => void
-  onMessage: (cb: (data: { sessionId: string; message: import('./types').ChatMessage }) => void) => void
+  onInit: (cb: (payload: DialogInitPayload) => void) => () => void
+  onMessage: (cb: (data: { sessionId: string; message: import('./types').ChatMessage }) => void) => () => void
+  onChatStream: (cb: (data: { sessionId: string; delta: string }) => void) => () => void
+  onStreamEnd: (
+    cb: (data: {
+      sessionId: string
+      reply?: string
+      error?: string
+      usedMcpTools?: string[]
+      usedSkills?: string[]
+    }) => void
+  ) => () => void
   chat: (
     sessionId: string,
     message: string,

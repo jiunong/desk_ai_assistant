@@ -59,7 +59,8 @@ export class LlmService {
   /** 基于会话消息对话（不使用全局历史，文档上下文在 systemPrompt 中） */
   async chatConversation(
     systemPrompt: string,
-    conversation: LlmConversationMessage[]
+    conversation: LlmConversationMessage[],
+    onChunk?: (delta: string) => void
   ): Promise<{ reply: string; usedTools: string[] }> {
     const usedTools: string[] = []
     let mcpTools: McpToolDef[] = []
@@ -95,15 +96,103 @@ export class LlmService {
       }
     }))
 
+    const requestOptions = {
+      model: this.config.llm.model,
+      messages,
+      max_tokens: this.config.llm.maxTokens,
+      temperature: this.config.llm.temperature,
+      ...(openAiTools.length ? { tools: openAiTools, tool_choice: 'auto' as const } : {})
+    }
+
     try {
       for (let round = 0; round < 6; round++) {
-        const response = await this.client.chat.completions.create({
-          model: this.config.llm.model,
-          messages,
-          max_tokens: this.config.llm.maxTokens,
-          temperature: this.config.llm.temperature,
-          ...(openAiTools.length ? { tools: openAiTools, tool_choice: 'auto' } : {})
-        })
+        if (onChunk) {
+          const stream = await this.client.chat.completions.create({
+            ...requestOptions,
+            stream: true
+          })
+
+          let content = ''
+          const toolCallAccums = new Map<
+            number,
+            { id: string; name: string; arguments: string }
+          >()
+
+          for await (const chunk of stream) {
+            const delta = chunk.choices[0]?.delta
+            if (!delta) continue
+
+            if (delta.content) {
+              content += delta.content
+              onChunk(delta.content)
+            }
+
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index ?? 0
+                let acc = toolCallAccums.get(idx)
+                if (!acc) {
+                  acc = { id: '', name: '', arguments: '' }
+                  toolCallAccums.set(idx, acc)
+                }
+                if (tc.id) acc.id = tc.id
+                if (tc.function?.name) acc.name += tc.function.name
+                if (tc.function?.arguments) acc.arguments += tc.function.arguments
+              }
+            }
+          }
+
+          const toolCalls = [...toolCallAccums.entries()]
+            .sort(([a], [b]) => a - b)
+            .map(([, t]) => t)
+            .filter((t) => t.id && t.name)
+
+          if (!toolCalls.length) {
+            return { reply: normalizeReply(content), usedTools }
+          }
+
+          messages.push({
+            role: 'assistant',
+            content: content || null,
+            tool_calls: toolCalls.map((t) => ({
+              id: t.id,
+              type: 'function' as const,
+              function: { name: t.name, arguments: t.arguments }
+            }))
+          })
+
+          for (const call of toolCalls) {
+            const toolMeta = mcpTools.find((t) => t.fullName === call.name)
+            if (!toolMeta) {
+              messages.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                content: `未知工具: ${call.name}`
+              })
+              continue
+            }
+
+            let args: Record<string, unknown> = {}
+            try {
+              args = JSON.parse(call.arguments || '{}') as Record<string, unknown>
+            } catch {
+              args = {}
+            }
+
+            try {
+              const result = await mcpManager.callTool(toolMeta.serverId, toolMeta.name, args)
+              usedTools.push(`${toolMeta.serverName}/${toolMeta.name}`)
+              messages.push({ role: 'tool', tool_call_id: call.id, content: result })
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err)
+              messages.push({ role: 'tool', tool_call_id: call.id, content: `工具调用失败: ${msg}` })
+            }
+          }
+
+          continue
+        }
+
+        const response = await this.client.chat.completions.create(requestOptions)
 
         const choice = response.choices[0]?.message
         if (!choice) return { reply: '（模型未返回内容）', usedTools }

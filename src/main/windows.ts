@@ -126,7 +126,7 @@ export function getOpenDialogCount(): number {
   return dialogWindows.size
 }
 
-export function showDialogWindow(payload: DialogInitPayload): BrowserWindow {
+export function showDialogWindow(payload: DialogInitPayload): Promise<BrowserWindow> {
   if (dialogWindows.size >= MAX_DIALOG_WINDOWS) {
     const oldestKey = dialogWindows.keys().next().value
     if (oldestKey) {
@@ -172,10 +172,6 @@ export function showDialogWindow(payload: DialogInitPayload): BrowserWindow {
     })
   }
 
-  win.webContents.once('did-finish-load', () => {
-    win.webContents.send('dialog:init', payload)
-  })
-
   dialogWindows.set(windowKey, win)
 
   win.on('closed', () => {
@@ -186,7 +182,19 @@ export function showDialogWindow(payload: DialogInitPayload): BrowserWindow {
   win.show()
   win.focus()
 
-  return win
+  return new Promise((resolve) => {
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.send('dialog:init', payload)
+      resolve(win)
+    })
+  })
+}
+
+export function sendToDialogSession(sessionId: string, channel: string, data: unknown): void {
+  const win = dialogWindows.get(sessionId)
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(channel, data)
+  }
 }
 
 export function destroyAllDialogWindowsForQuit(): void {

@@ -7,9 +7,11 @@ import {
   ContinueChatResult,
   ParsedFile
 } from '../../shared/types'
+import { basename, extname } from 'path'
 import {
   buildDocumentPrompt,
   buildVisionUserContent,
+  IMAGE_EXTENSIONS,
   parseFiles,
   toImageAttachments,
   validateFiles
@@ -27,6 +29,19 @@ import {
   getSessionSnapshot
 } from './session-store'
 import { skillManager } from './skill-manager'
+
+export type AnalyzePreparedInfo = {
+  sessionId: string
+  title: string
+  messages: ChatMessage[]
+  fileNames: string[]
+  meta: { usedSkills: string[] }
+}
+
+export type AnalyzeCallbacks = {
+  onPrepared?: (info: AnalyzePreparedInfo) => void | Promise<void>
+  onChunk?: (delta: string) => void
+}
 
 export class AnalysisService {
   private llm: LlmService
@@ -58,17 +73,45 @@ export class AnalysisService {
     return { sessionId: session.id, welcome }
   }
 
-  async analyze(req: AnalysisRequest): Promise<AnalysisResult> {
+  async analyze(req: AnalysisRequest, callbacks?: AnalyzeCallbacks): Promise<AnalysisResult> {
     const { valid, errors } = validateFiles(req.filePaths, this.config)
     if (valid.length === 0) {
       throw new Error(errors.join('\n') || '没有有效文件')
     }
 
-    const files = await parseFiles(valid)
     const userPrompt = req.userPrompt ?? ''
-    const extensions = files.map((f) => f.extension)
+    const fileNames = valid.map((p) => basename(p))
+    const hasImages = valid.some((p) => IMAGE_EXTENSIONS.includes(extname(p).toLowerCase()))
+    const displayUserMsg =
+      userPrompt ||
+      (hasImages
+        ? `请分析以下内容：${fileNames.join('、')}`
+        : `请分析以下文档：${fileNames.join('、')}`)
 
+    const session = createSession(valid, [], [])
+    const now = new Date().toISOString()
+    const fileTitle = valid.length === 1 ? fileNames[0] : `分析结果 (${valid.length} 个文件)`
+
+    if (callbacks?.onPrepared) {
+      await callbacks.onPrepared({
+        sessionId: session.id,
+        title: fileTitle,
+        messages: [
+          { role: 'user', content: displayUserMsg, createdAt: now },
+          { role: 'assistant', content: '', createdAt: now }
+        ],
+        fileNames,
+        meta: { usedSkills: [] }
+      })
+    }
+
+    const files = await parseFiles(valid)
+    session.files = files
+
+    const extensions = files.map((f) => f.extension)
     const matchedSkills = skillManager.match(this.config, userPrompt, extensions)
+    session.usedSkills = matchedSkills.map((s) => s.id)
+
     const skillOutputs: string[] = []
     for (const skill of matchedSkills) {
       const result = await skillManager.run(skill, {
@@ -83,7 +126,6 @@ export class AnalysisService {
       userContent = `${skillOutputs.join('\n\n')}\n\n${userContent}`
     }
 
-    const session = createSession(valid, files, matchedSkills.map((s) => s.id))
     const systemPrompt = buildSessionSystemPrompt(
       this.config.pet.name,
       files.map((f) => ({
@@ -94,23 +136,11 @@ export class AnalysisService {
       }))
     )
 
-    const hasImages = files.some((f) => f.kind === 'image')
-    const displayUserMsg =
-      userPrompt ||
-      (hasImages
-        ? `请分析以下内容：${files.map((f) => f.name).join('、')}`
-        : `请分析以下文档：${files.map((f) => f.name).join('、')}`)
-
     const userLlmContent = buildVisionUserContent(
       userContent,
       files.filter((f) => f.kind === 'image')
     )
 
-    const { reply, usedTools } = await this.llm.chatConversation(systemPrompt, [
-      { role: 'user', content: userLlmContent }
-    ])
-
-    const now = new Date().toISOString()
     const imageAttachments = toImageAttachments(files)
     appendMessage(session.id, {
       role: 'user',
@@ -118,6 +148,13 @@ export class AnalysisService {
       createdAt: now,
       ...(imageAttachments.length ? { attachments: imageAttachments } : {})
     })
+
+    const { reply, usedTools } = await this.llm.chatConversation(
+      systemPrompt,
+      [{ role: 'user', content: userLlmContent }],
+      callbacks?.onChunk
+    )
+
     appendMessage(session.id, { role: 'assistant', content: reply, createdAt: now })
 
     addHistory({
@@ -156,7 +193,8 @@ export class AnalysisService {
   async continueChat(
     sessionId: string,
     userMessage: string,
-    filePaths?: string[]
+    filePaths?: string[],
+    onChunk?: (delta: string) => void
   ): Promise<ContinueChatResult> {
     const session = getSession(sessionId)
     if (!session) {
@@ -205,7 +243,7 @@ export class AnalysisService {
 
     const conversation = this.buildLlmConversation(updatedSession.messages)
 
-    const { reply, usedTools } = await this.llm.chatConversation(systemPrompt, conversation)
+    const { reply, usedTools } = await this.llm.chatConversation(systemPrompt, conversation, onChunk)
     appendMessage(sessionId, { role: 'assistant', content: reply, createdAt: new Date().toISOString() })
 
     return {
