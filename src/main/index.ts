@@ -17,6 +17,7 @@ import { mcpManager } from './services/mcp-manager'
 import { skillManager } from './services/skill-manager'
 
 import { LlmService } from './services/llm'
+import { saveTempFiles } from './services/temp-files'
 
 import {
   createPetWindow,
@@ -234,11 +235,16 @@ function setupIpc(): void {
   })
 
   ipcMain.handle(
+    'dialog:saveTempFiles',
+    (_e, files: import('./services/temp-files').TempFilePayload[]) => saveTempFiles(files)
+  )
+
+  ipcMain.handle(
     'dialog:chat',
-    async (_e, sessionId: string, message: string, attachments?: import('../shared/types').ImageAttachment[]) => {
+    async (_e, sessionId: string, message: string, filePaths?: string[]) => {
     sendPetState('thinking')
     try {
-      const result = await analysisService.continueChat(sessionId, message, attachments)
+      const result = await analysisService.continueChat(sessionId, message, filePaths)
       sendPetState('talking')
       return result
     } catch (err) {

@@ -5,7 +5,7 @@ import {
   AppConfig,
   ChatMessage,
   ContinueChatResult,
-  ImageAttachment
+  ParsedFile
 } from '../../shared/types'
 import {
   buildDocumentPrompt,
@@ -19,7 +19,13 @@ import { LlmService } from './llm'
 import { addHistory, trimHistory } from './memory'
 import { mcpManager } from './mcp-manager'
 import { buildSessionSystemPrompt } from './prompt-template'
-import { appendMessage, createSession, getSession, getSessionSnapshot } from './session-store'
+import {
+  addSessionFiles,
+  appendMessage,
+  createSession,
+  getSession,
+  getSessionSnapshot
+} from './session-store'
 import { skillManager } from './skill-manager'
 
 export class AnalysisService {
@@ -150,29 +156,46 @@ export class AnalysisService {
   async continueChat(
     sessionId: string,
     userMessage: string,
-    attachments?: ImageAttachment[]
+    filePaths?: string[]
   ): Promise<ContinueChatResult> {
     const session = getSession(sessionId)
     if (!session) {
       throw new Error('会话已过期，请重新打开对话')
     }
 
-    const trimmed = userMessage.trim()
-    if (!trimmed && !attachments?.length) {
-      throw new Error('请输入问题或添加图片')
+    let newFiles: ParsedFile[] = []
+    if (filePaths?.length) {
+      const { valid, errors } = validateFiles(filePaths, this.config)
+      if (!valid.length) {
+        throw new Error(errors.join('\n') || '没有有效文件')
+      }
+      newFiles = await parseFiles(valid)
+      addSessionFiles(sessionId, valid, newFiles)
     }
 
+    const trimmed = userMessage.trim()
+    if (!trimmed && !newFiles.length) {
+      throw new Error('请输入问题或添加文件')
+    }
+
+    const displayContent =
+      trimmed ||
+      (newFiles.length ? `请分析附带文件：${newFiles.map((f) => f.name).join('、')}` : '')
+
     const now = new Date().toISOString()
+    const imageAttachments = toImageAttachments(newFiles)
     appendMessage(sessionId, {
       role: 'user',
-      content: trimmed,
+      content: displayContent,
       createdAt: now,
-      ...(attachments?.length ? { attachments } : {})
+      ...(newFiles.length ? { attachedFileNames: newFiles.map((f) => f.name) } : {}),
+      ...(imageAttachments.length ? { attachments: imageAttachments } : {})
     })
 
+    const updatedSession = getSession(sessionId)!
     const systemPrompt = buildSessionSystemPrompt(
       this.config.pet.name,
-      session.files.map((f) => ({
+      updatedSession.files.map((f) => ({
         name: f.name,
         text: f.text,
         truncated: f.truncated,
@@ -180,12 +203,16 @@ export class AnalysisService {
       }))
     )
 
-    const conversation = this.buildLlmConversation(getSession(sessionId)!.messages)
+    const conversation = this.buildLlmConversation(updatedSession.messages)
 
     const { reply, usedTools } = await this.llm.chatConversation(systemPrompt, conversation)
     appendMessage(sessionId, { role: 'assistant', content: reply, createdAt: new Date().toISOString() })
 
-    return { reply, usedMcpTools: usedTools }
+    return {
+      reply,
+      usedMcpTools: usedTools,
+      fileNames: updatedSession.files.map((f) => f.name)
+    }
   }
 
   async refreshMcp(): Promise<void> {

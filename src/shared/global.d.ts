@@ -24,13 +24,15 @@ export interface DialogInitPayload {
 export interface DialogApi {
   close: () => void
   resizeWindow: (deltaW: number, deltaH: number) => void
+  resolvePaths: (files: File[]) => string[]
+  saveTempFiles: (files: { name: string; data: string }[]) => Promise<string[]>
   onInit: (cb: (payload: DialogInitPayload) => void) => void
   onMessage: (cb: (data: { sessionId: string; message: import('./types').ChatMessage }) => void) => void
   chat: (
     sessionId: string,
     message: string,
-    attachments?: import('./types').ImageAttachment[]
-  ) => Promise<{ reply: string; usedMcpTools: string[] }>
+    filePaths?: string[]
+  ) => Promise<{ reply: string; usedMcpTools: string[]; fileNames: string[] }>
 }
 
 export interface ConfigApi {

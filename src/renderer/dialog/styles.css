@@ -302,11 +302,37 @@ body,
   padding: 4px 0;
 }
 
+.dialog-shell.dialog-drag-over .chat-input-area {
+  border-top-color: rgba(255, 140, 66, 0.45);
+}
+
 .chat-input-area {
+  position: relative;
   padding: 12px 16px;
   border-top: 1px solid rgba(0, 0, 0, 0.06);
   background: #fffcf8;
   flex-shrink: 0;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.chat-input-area.drag-over {
+  background: #fff8f0;
+}
+
+.drop-hint {
+  position: absolute;
+  inset: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgba(255, 140, 66, 0.75);
+  border-radius: 12px;
+  background: rgba(255, 248, 240, 0.92);
+  color: #e65100;
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 5;
 }
 
 .chat-error {
@@ -319,9 +345,66 @@ body,
 .chat-actions,
 .chat-input-area textarea,
 .chat-input-area button,
-.pending-images,
-.pending-image-wrap {
+.pending-files,
+.pending-file-chip,
+.msg-files {
   -webkit-app-region: no-drag;
+}
+
+.pending-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.pending-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 8px 4px 10px;
+  border-radius: 8px;
+  background: #fff8f0;
+  border: 1px solid #ffd4a8;
+  font-size: 12px;
+  color: #5a3e2b;
+}
+
+.pending-file-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remove-file-btn {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: #ff8c42;
+  color: white;
+  font-size: 10px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.msg-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.msg-file-chip {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #fff8f0;
+  border: 1px solid #ffd4a8;
+  font-size: 12px;
+  color: #5a3e2b;
 }
 
 .chat-input-area textarea {
@@ -352,40 +435,6 @@ body,
   border-radius: 8px;
   border: 1px solid #eee;
   object-fit: cover;
-}
-
-.pending-images {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.pending-image-wrap {
-  position: relative;
-}
-
-.pending-image {
-  width: 72px;
-  height: 72px;
-  object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid #e0e0e0;
-}
-
-.remove-image-btn {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: 50%;
-  background: #ff6b6b;
-  color: white;
-  font-size: 10px;
-  cursor: pointer;
-  line-height: 1;
 }
 
 .chat-actions {

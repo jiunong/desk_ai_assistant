@@ -79,7 +79,10 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   createdAt: string
+  /** 图片附件（用于视觉模型） */
   attachments?: ImageAttachment[]
+  /** 本轮附带的文件名（展示用） */
+  attachedFileNames?: string[]
 }
 
 export interface ChatSession {
@@ -94,6 +97,7 @@ export interface ChatSession {
 export interface ContinueChatResult {
   reply: string
   usedMcpTools: string[]
+  fileNames: string[]
 }
 
 export interface ParsedFile {

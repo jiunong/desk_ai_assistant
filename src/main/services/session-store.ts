@@ -38,6 +38,17 @@ export function appendMessage(sessionId: string, message: ChatMessage): void {
   session.messages.push(message)
 }
 
+export function addSessionFiles(
+  sessionId: string,
+  filePaths: string[],
+  files: ParsedFile[]
+): void {
+  const session = sessions.get(sessionId)
+  if (!session) throw new Error('会话已过期，请重新打开对话')
+  session.filePaths.push(...filePaths)
+  session.files.push(...files)
+}
+
 export function getSessionSnapshot(sessionId: string): ChatSession | undefined {
   const session = sessions.get(sessionId)
   if (!session) return undefined

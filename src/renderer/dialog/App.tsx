@@ -1,27 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatMessage, ImageAttachment } from '../../shared/types'
+import type { ChatMessage } from '../../shared/types'
+import { collectFilePaths, FILE_ACCEPT, fileNameFromPath } from './dialog-files'
 import MarkdownContent from './MarkdownContent'
 import WindowResizeHandles from './WindowResizeHandles'
-
-function readFileAsAttachment(file: File): Promise<ImageAttachment> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = reader.result
-      if (typeof dataUrl !== 'string') {
-        reject(new Error('无法读取图片'))
-        return
-      }
-      resolve({
-        name: file.name || '粘贴的图片',
-        mimeType: file.type || 'image/png',
-        dataUrl
-      })
-    }
-    reader.onerror = () => reject(new Error('无法读取图片'))
-    reader.readAsDataURL(file)
-  })
-}
 
 export default function App() {
   const params = new URLSearchParams(window.location.search)
@@ -31,7 +12,8 @@ export default function App() {
   const [fileNames, setFileNames] = useState<string[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
-  const [pendingImages, setPendingImages] = useState<ImageAttachment[]>([])
+  const [pendingFiles, setPendingFiles] = useState<string[]>([])
+  const [dragOver, setDragOver] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [meta, setMeta] = useState<{ usedSkills?: string[]; usedMcpTools?: string[] }>({})
@@ -58,66 +40,114 @@ export default function App() {
     scrollToBottom()
   }, [messages, loading])
 
-  const addImages = useCallback(async (files: File[]) => {
-    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
-    if (!imageFiles.length) return
-
-    try {
-      const attachments = await Promise.all(imageFiles.map(readFileAsAttachment))
-      setPendingImages((prev) => [...prev, ...attachments])
-      setError('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '图片读取失败')
-    }
+  const appendPendingPaths = useCallback((paths: string[]) => {
+    if (!paths.length) return
+    setPendingFiles((prev) => {
+      const merged = [...prev]
+      for (const path of paths) {
+        if (!merged.includes(path)) merged.push(path)
+      }
+      return merged
+    })
+    setError('')
   }, [])
 
-  const onPickImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = [...(e.target.files ?? [])]
+  const addFiles = useCallback(
+    async (fileList: File[]) => {
+      if (!fileList.length || loading) return
+
+      try {
+        const paths = await collectFilePaths(fileList)
+        if (!paths.length) {
+          setError('无法读取文件，请从资源管理器拖入或重新复制')
+          return
+        }
+        appendPendingPaths(paths)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '文件读取失败')
+      }
+    },
+    [appendPendingPaths, loading]
+  )
+
+  const onPickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = [...(e.target.files ?? [])]
     e.target.value = ''
-    await addImages(files)
+    await addFiles(fileList)
   }
 
   const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = [...e.clipboardData.items]
-    const imageItems = items
-      .filter((item) => item.type.startsWith('image/'))
-      .map((item) => item.getAsFile())
+    const files = items
+      .map((item) => (item.kind === 'file' ? item.getAsFile() : null))
       .filter((f): f is File => Boolean(f))
 
-    if (!imageItems.length) return
+    if (!files.length) return
+
     e.preventDefault()
-    void addImages(imageItems)
+    void addFiles(files)
   }
 
-  const removePendingImage = (index: number) => {
-    setPendingImages((prev) => prev.filter((_, i) => i !== index))
+  const onDragEnter = (e: React.DragEvent) => {
+    if (!canChat || loading) return
+    e.preventDefault()
+    setDragOver(true)
+  }
+
+  const onDragOver = (e: React.DragEvent) => {
+    if (!canChat || loading) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    setDragOver(true)
+  }
+
+  const onDragLeave = (e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return
+    setDragOver(false)
+  }
+
+  const onDrop = async (e: React.DragEvent) => {
+    if (!canChat || loading) return
+    e.preventDefault()
+    setDragOver(false)
+    const fileList = [...e.dataTransfer.files]
+    await addFiles(fileList)
+  }
+
+  const removePendingFile = (index: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
   const send = useCallback(async () => {
     const text = input.trim()
-    const attachments = pendingImages
-    if ((!text && !attachments.length) || !sessionId || loading) return
+    const files = pendingFiles
+    if ((!text && !files.length) || !sessionId || loading) return
 
     setInput('')
-    setPendingImages([])
+    setPendingFiles([])
     setError('')
     setLoading(true)
 
-    const displayContent = text || (attachments.length ? '请分析附带的图片' : '')
+    const displayContent =
+      text || (files.length ? `请分析附带文件：${files.map(fileNameFromPath).join('、')}` : '')
+
     const userMsg: ChatMessage = {
       role: 'user',
       content: displayContent,
       createdAt: new Date().toISOString(),
-      ...(attachments.length ? { attachments } : {})
+      ...(files.length ? { attachedFileNames: files.map(fileNameFromPath) } : {})
     }
     setMessages((prev) => [...prev, userMsg])
 
     try {
-      const result = await window.dialogApi.chat(sessionId, displayContent, attachments)
+      const result = await window.dialogApi.chat(sessionId, displayContent, files)
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: result.reply, createdAt: new Date().toISOString() }
       ])
+      if (result.fileNames.length) {
+        setFileNames(result.fileNames)
+      }
       if (result.usedMcpTools.length) {
         setMeta((m) => ({ ...m, usedMcpTools: result.usedMcpTools }))
       }
@@ -126,7 +156,7 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }, [input, pendingImages, sessionId, loading])
+  }, [input, pendingFiles, sessionId, loading])
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -135,18 +165,22 @@ export default function App() {
     }
   }
 
-  const canSend = Boolean(input.trim() || pendingImages.length)
+  const canSend = Boolean(input.trim() || pendingFiles.length)
 
   return (
-    <div className="dialog-shell">
+    <div
+      className={`dialog-shell ${dragOver ? 'dialog-drag-over' : ''}`}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <WindowResizeHandles />
       <div className="dialog-header">
         <div>
           <h2>{title}</h2>
           {fileNames.length > 0 && (
-            <p className="file-tags">
-              📎 {fileNames.join(' · ')}
-            </p>
+            <p className="file-tags">📎 {fileNames.join(' · ')}</p>
           )}
         </div>
         <button className="close-btn" onClick={() => window.dialogApi.close()}>
@@ -159,6 +193,15 @@ export default function App() {
           <div key={i} className={`msg-bubble ${msg.role}`}>
             <div className="msg-label">{msg.role === 'user' ? '你' : '小智'}</div>
             <div className="msg-content">
+              {msg.attachedFileNames?.length ? (
+                <div className="msg-files">
+                  {msg.attachedFileNames.map((name, j) => (
+                    <span key={j} className="msg-file-chip">
+                      📎 {name}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               {msg.attachments?.length ? (
                 <div className="msg-images">
                   {msg.attachments.map((img, j) => (
@@ -191,18 +234,19 @@ export default function App() {
       </div>
 
       {canChat ? (
-        <div className="chat-input-area">
+        <div className={`chat-input-area ${dragOver ? 'drag-over' : ''}`}>
+          {dragOver && <div className="drop-hint">松开即可添加文件或图片</div>}
           {error && <div className="chat-error">{error}</div>}
-          {pendingImages.length > 0 && (
-            <div className="pending-images">
-              {pendingImages.map((img, i) => (
-                <div key={i} className="pending-image-wrap">
-                  <img src={img.dataUrl} alt={img.name} className="pending-image" />
+          {pendingFiles.length > 0 && (
+            <div className="pending-files">
+              {pendingFiles.map((path, i) => (
+                <div key={`${path}-${i}`} className="pending-file-chip">
+                  <span>📎 {fileNameFromPath(path)}</span>
                   <button
                     type="button"
-                    className="remove-image-btn"
-                    onClick={() => removePendingImage(i)}
-                    title="移除图片"
+                    className="remove-file-btn"
+                    onClick={() => removePendingFile(i)}
+                    title="移除文件"
                   >
                     ✕
                   </button>
@@ -215,7 +259,7 @@ export default function App() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
-            placeholder="继续提问，可粘贴或添加图片…（Enter 发送，Shift+Enter 换行）"
+            placeholder="继续提问，可拖入/粘贴/添加文件与图片…（Enter 发送，Shift+Enter 换行）"
             rows={2}
             disabled={loading}
           />
@@ -223,10 +267,10 @@ export default function App() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept={FILE_ACCEPT}
               multiple
               hidden
-              onChange={onPickImages}
+              onChange={onPickFiles}
             />
             <button
               type="button"
@@ -234,7 +278,7 @@ export default function App() {
               onClick={() => fileInputRef.current?.click()}
               disabled={loading}
             >
-              添加图片
+              添加文件
             </button>
             <button className="send-btn" onClick={() => void send()} disabled={loading || !canSend}>
               {loading ? '思考中…' : '发送'}
