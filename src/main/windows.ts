@@ -5,10 +5,12 @@ import { getConfigPageUrl } from './config-server'
 import { getPetWindowSize } from './pet-window'
 
 let petWindow: BrowserWindow | null = null
-let dialogWindow: BrowserWindow | null = null
 let configWindow: BrowserWindow | null = null
+const dialogWindows = new Map<string, BrowserWindow>()
 let petAllowClose = false
 let onPetVisibilityChange: (() => void) | null = null
+
+const MAX_DIALOG_WINDOWS = 12
 
 export function setPetVisibilityListener(listener: () => void): void {
   onPetVisibilityChange = listener
@@ -24,6 +26,12 @@ export interface DialogInitPayload {
 
 function preloadPath(name: string): string {
   return join(__dirname, '../preload', `${name}.js`)
+}
+
+function syncPetStateAfterDialogs(): void {
+  if (dialogWindows.size === 0) {
+    getPetWindow()?.webContents.send('pet:setState', 'idle')
+  }
 }
 
 function attachPetWindowHandlers(win: BrowserWindow): void {
@@ -110,27 +118,40 @@ export function getPetWindow(): BrowserWindow | null {
   return petWindow
 }
 
-export function getDialogWindow(): BrowserWindow | null {
-  return dialogWindow
+export function getDialogWindowFromSender(sender: Electron.WebContents): BrowserWindow | null {
+  return BrowserWindow.fromWebContents(sender)
+}
+
+export function getOpenDialogCount(): number {
+  return dialogWindows.size
 }
 
 export function showDialogWindow(payload: DialogInitPayload): BrowserWindow {
-  if (dialogWindow && !dialogWindow.isDestroyed()) {
-    dialogWindow.close()
+  if (dialogWindows.size >= MAX_DIALOG_WINDOWS) {
+    const oldestKey = dialogWindows.keys().next().value
+    if (oldestKey) {
+      dialogWindows.get(oldestKey)?.close()
+    }
   }
 
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize
+  const windowKey =
+    payload.sessionId || `dialog-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
-  dialogWindow = new BrowserWindow({
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize
+  const offset = (dialogWindows.size % 8) * 32
+  const winX = Math.round((width - 760) / 2) + offset
+  const winY = Math.round((height - 820) / 2) + offset
+
+  const win = new BrowserWindow({
     width: 760,
     height: 820,
     minWidth: 480,
     minHeight: 400,
-    x: Math.round((width - 760) / 2),
-    y: Math.round((height - 820) / 2),
+    x: winX,
+    y: winY,
     frame: false,
     transparent: true,
-    alwaysOnTop: true,
+    alwaysOnTop: false,
     resizable: true,
     thickFrame: true,
     minimizable: false,
@@ -144,23 +165,37 @@ export function showDialogWindow(payload: DialogInitPayload): BrowserWindow {
 
   const params = new URLSearchParams({ sessionId: payload.sessionId, title: payload.title })
   if (process.env['ELECTRON_RENDERER_URL']) {
-    dialogWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/dialog/index.html?${params}`)
+    win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/dialog/index.html?${params}`)
   } else {
-    dialogWindow.loadFile(join(__dirname, '../renderer/dialog/index.html'), {
+    win.loadFile(join(__dirname, '../renderer/dialog/index.html'), {
       query: Object.fromEntries(params)
     })
   }
 
-  dialogWindow.webContents.once('did-finish-load', () => {
-    dialogWindow?.webContents.send('dialog:init', payload)
+  win.webContents.once('did-finish-load', () => {
+    win.webContents.send('dialog:init', payload)
   })
 
-  dialogWindow.on('closed', () => {
-    dialogWindow = null
-    getPetWindow()?.webContents.send('pet:setState', 'idle')
+  dialogWindows.set(windowKey, win)
+
+  win.on('closed', () => {
+    dialogWindows.delete(windowKey)
+    syncPetStateAfterDialogs()
   })
 
-  return dialogWindow
+  win.show()
+  win.focus()
+
+  return win
+}
+
+export function destroyAllDialogWindowsForQuit(): void {
+  for (const win of dialogWindows.values()) {
+    if (!win.isDestroyed()) {
+      win.destroy()
+    }
+  }
+  dialogWindows.clear()
 }
 
 export function sendPetState(state: string): void {

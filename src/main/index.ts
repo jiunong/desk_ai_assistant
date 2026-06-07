@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage } from 'electron'
+import { app, ipcMain, Menu, Tray, nativeImage } from 'electron'
 
 import { join } from 'path'
 
@@ -23,7 +23,9 @@ import {
   createPetWindow,
   destroyPetWindowForQuit,
   getPetWindow,
-  getDialogWindow,
+  getDialogWindowFromSender,
+  destroyAllDialogWindowsForQuit,
+  getOpenDialogCount,
   hidePetWindow,
   isPetWindowVisible,
   showDialogWindow,
@@ -74,9 +76,10 @@ function applyConfig(newConfig: AppConfig): void {
 function handleOpenDirectChat(): void {
   sendPetState('talking')
   const { sessionId, welcome } = analysisService.openDirectChat()
+  const index = getOpenDialogCount() + 1
   showDialogWindow({
     sessionId,
-    title: '与小智对话',
+    title: index > 1 ? `与小智对话 #${index}` : '与小智对话',
     messages: [{ role: 'assistant', content: welcome, createdAt: new Date().toISOString() }],
     fileNames: [],
     meta: {}
@@ -111,9 +114,14 @@ async function handleFileDrop(filePaths: string[], userPrompt?: string): Promise
 
 
 
+    const fileTitle =
+      result.files.length === 1
+        ? result.files[0].name
+        : `分析结果 (${result.files.length} 个文件)`
+
     showDialogWindow({
       sessionId: result.sessionId,
-      title: '分析结果',
+      title: fileTitle,
       messages: analysisService.getSession(result.sessionId)?.messages ?? [
         { role: 'assistant', content: result.reply, createdAt: new Date().toISOString() }
       ],
@@ -175,18 +183,12 @@ function setupIpc(): void {
 
 
 
-  ipcMain.on('dialog:close', () => {
-
-    BrowserWindow.getAllWindows()
-
-      .find((w) => w.webContents.getURL().includes('dialog'))
-
-      ?.close()
-
+  ipcMain.on('dialog:close', (event) => {
+    getDialogWindowFromSender(event.sender)?.close()
   })
 
-  ipcMain.on('dialog:resizeWindow', (_e, deltaW: number, deltaH: number) => {
-    const win = getDialogWindow()
+  ipcMain.on('dialog:resizeWindow', (event, deltaW: number, deltaH: number) => {
+    const win = getDialogWindowFromSender(event.sender)
     if (!win || win.isDestroyed()) return
     const [w, h] = win.getSize()
     const [minW, minH] = win.getMinimumSize()
@@ -344,6 +346,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   destroyPetWindowForQuit()
+  destroyAllDialogWindowsForQuit()
   destroyConfigWindowForQuit()
   skillManager.stopWatch()
   stopConfigServer()

@@ -5,6 +5,11 @@ import pdfParse from 'pdf-parse'
 import { parseOfficeAsync } from 'officeparser'
 import * as XLSX from 'xlsx'
 import { AppConfig, ImageAttachment, ParsedFile } from '../../shared/types'
+import {
+  documentImageToParsedFields,
+  extractDocxImages,
+  extractPdfImages
+} from './document-images'
 import { ECHARTS_JSON_RULE } from './prompt-template'
 
 const MAX_TEXT_LENGTH = 120_000
@@ -41,6 +46,28 @@ async function parsePdf(path: string): Promise<string> {
 async function parseDocx(path: string): Promise<string> {
   const result = await mammoth.extractRawText({ path })
   return result.value
+}
+
+function appendDocumentImages(
+  results: ParsedFile[],
+  sourcePath: string,
+  sourceName: string,
+  ext: string,
+  images: Awaited<ReturnType<typeof extractDocxImages>>
+): void {
+  for (const image of images) {
+    const fields = documentImageToParsedFields(sourceName, image)
+    results.push({
+      path: sourcePath,
+      name: fields.name,
+      extension: ext,
+      kind: 'image',
+      text: fields.text,
+      truncated: false,
+      mimeType: fields.mimeType,
+      imageDataUrl: fields.imageDataUrl
+    })
+  }
 }
 
 function parseExcel(path: string): string {
@@ -137,14 +164,22 @@ export async function parseFiles(paths: string[]): Promise<ParsedFile[]> {
 
     let raw = ''
 
+    let documentImages: Awaited<ReturnType<typeof extractDocxImages>> = []
+
     try {
       switch (ext) {
-        case '.pdf':
+        case '.pdf': {
           raw = await parsePdf(path)
+          documentImages = await extractPdfImages(path, raw.trim().length)
           break
-        case '.doc':
-        case '.docx':
+        }
+        case '.docx': {
           raw = await parseDocx(path)
+          documentImages = await extractDocxImages(path)
+          break
+        }
+        case '.doc':
+          raw = await parseOffice(path)
           break
         case '.ppt':
         case '.pptx':
@@ -167,7 +202,15 @@ export async function parseFiles(paths: string[]): Promise<ParsedFile[]> {
     }
 
     const { text, truncated } = truncate(raw)
-    results.push({ path, name, extension: ext, kind: 'text', text, truncated })
+    const textBody =
+      documentImages.length && !raw.trim()
+        ? `${text}\n\n[该文档几乎无文字内容，已自动提取 ${documentImages.length} 张内嵌/页面图片供视觉分析]`
+        : documentImages.length
+          ? `${text}\n\n[已从文档提取 ${documentImages.length} 张图片（插图、签名、扫描页等），将随消息一并提交视觉模型]`
+          : text
+
+    results.push({ path, name, extension: ext, kind: 'text', text: textBody, truncated })
+    appendDocumentImages(results, path, name, ext, documentImages)
   }
 
   return results
@@ -185,7 +228,11 @@ export function buildDocumentPrompt(files: ParsedFile[], userPrompt?: string): s
     .join('\n\n---\n\n')
 
   const imageBlocks = imageFiles
-    .map((f, i) => `### 图片 ${i + 1}: ${f.name}\n路径: ${f.path}`)
+    .map((f, i) => {
+      const fromDoc = f.text.startsWith('[文档内图片')
+      const hint = fromDoc ? '（从 Word/PDF 内自动提取）' : ''
+      return `### 图片 ${i + 1}: ${f.name}${hint}\n路径: ${f.path}`
+    })
     .join('\n\n---\n\n')
 
   const defaultDocPrompt =

@@ -71,7 +71,11 @@ export function buildSessionSystemPrompt(
   const docSection = files
     .map((f, i) => {
       if (f.kind === 'image') {
-        return `### 图片 ${i + 1}: ${f.name}\n（图像内容随对话消息以视觉方式提供，请结合图像分析）`
+        const fromDoc = f.text.startsWith('[文档内图片')
+        const hint = fromDoc
+          ? '（从 Word/PDF 内自动提取的插图、签名或扫描页，随消息以视觉方式提供）'
+          : '（图像内容随对话消息以视觉方式提供，请结合图像分析）'
+        return `### 图片 ${i + 1}: ${f.name}\n${hint}`
       }
       return `### 文档 ${i + 1}: ${f.name}${f.truncated ? ' (内容已截断)' : ''}\n${f.text}`
     })
