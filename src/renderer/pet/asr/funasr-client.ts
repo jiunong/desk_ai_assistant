@@ -222,6 +222,7 @@ export class FunAsrClient {
 
           const data48k = buffer[buffer.length - 1]
           const data16k = Recorder.SampleData([data48k], bufferSampleRate, 16000).data
+          // @ts-ignore
           this.sampleBuf = Int16Array.from([...this.sampleBuf, ...data16k])
 
           while (this.sampleBuf.length >= CHUNK_SIZE) {
