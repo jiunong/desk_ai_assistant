@@ -30,6 +30,7 @@ export function useHoldToTalk({
   const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const holdingRef = useRef(false)
   const phaseRef = useRef<HoldToTalkPhase>('idle')
+  const lastTextRef = useRef('')
   const onRecordingStartRef = useRef(onRecordingStart)
   const onPartialResultRef = useRef(onPartialResult)
   const onResultRef = useRef(onResult)
@@ -60,13 +61,16 @@ export function useHoldToTalk({
     holdingRef.current = false
     clientRef.current?.cancel()
     clientRef.current = null
+    lastTextRef.current = ''
     setPhase('idle')
   }, [clearArmTimer])
 
   const beginRecording = useCallback(async () => {
-    if (!asrConfig?.enabled || phaseRef.current === 'processing') return
+    if (!asrConfig?.enabled) return
 
+    lastTextRef.current = ''
     const client = new FunAsrClient(asrConfig, (text) => {
+      lastTextRef.current = text
       onPartialResultRef.current?.(text)
     })
     clientRef.current = client
@@ -86,7 +90,7 @@ export function useHoldToTalk({
       if (!asrConfig?.enabled) onErrorRef.current?.('请先在配置页启用语音识别')
       return
     }
-    if (phaseRef.current === 'processing' || holdingRef.current) return
+    if (holdingRef.current || phaseRef.current !== 'idle') return
 
     holdingRef.current = true
     clearArmTimer()
@@ -118,38 +122,40 @@ export function useHoldToTalk({
 
     if (currentPhase !== 'recording') return
 
-    setPhase('processing')
+    const client = clientRef.current
+    const text = lastTextRef.current
+    clientRef.current = null
+    lastTextRef.current = ''
+    setPhase('idle')
+
+    void client?.stop().catch(() => {})
+
     try {
-      const text = (await clientRef.current?.stop()) ?? ''
-      clientRef.current = null
       await onResultRef.current(text)
     } catch (err) {
       onErrorRef.current?.(err instanceof Error ? err.message : '语音识别失败')
-    } finally {
-      setPhase('idle')
     }
-  }, [clearArmTimer, reset])
+  }, [clearArmTimer])
 
   const cancelHold = useCallback(() => {
     holdingRef.current = false
     clearArmTimer()
     clientRef.current?.cancel()
     clientRef.current = null
+    lastTextRef.current = ''
     setPhase('idle')
     onCancelRef.current?.()
   }, [clearArmTimer])
 
   useEffect(() => () => reset(), [reset])
 
-  const isActive = phase !== 'idle'
+  const isActive = phase === 'arming' || phase === 'recording'
   const hint =
     phase === 'arming'
       ? `继续按住 ${((asrConfig?.holdDelayMs ?? 0) / 1000).toFixed(1)}s 开始说话…`
       : phase === 'recording'
         ? '松手填入输入框'
-        : phase === 'processing'
-          ? '识别中…'
-          : ''
+        : ''
 
   return {
     phase,

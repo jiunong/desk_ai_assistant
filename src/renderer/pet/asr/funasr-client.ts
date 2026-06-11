@@ -72,6 +72,7 @@ export class FunAsrClient {
   private recText = ''
   private offlineText = ''
   private recording = false
+  private stopping = false
   private resolveStop: ((text: string) => void) | null = null
   private stopTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -106,6 +107,7 @@ export class FunAsrClient {
 
       this.resolveStop = resolve
       this.recording = false
+      this.stopping = true
 
       const request = {
         chunk_size: [5, 10, 5],
@@ -131,16 +133,22 @@ export class FunAsrClient {
         (msg) => reject(new Error(msg))
       )
 
-      this.stopTimer = setTimeout(() => {
-        this.closeSocket()
-        this.resolveStop?.(this.recText.trim())
-        this.resolveStop = null
-      }, 3000)
+      this.stopTimer = setTimeout(() => this.finishStop(), 3000)
     })
+  }
+
+  private finishStop(): void {
+    if (this.stopTimer) clearTimeout(this.stopTimer)
+    this.stopTimer = null
+    this.stopping = false
+    this.closeSocket()
+    this.resolveStop?.(this.recText.trim())
+    this.resolveStop = null
   }
 
   cancel(): void {
     this.recording = false
+    this.stopping = false
     if (this.stopTimer) clearTimeout(this.stopTimer)
     this.recorder?.close()
     this.recorder = null
@@ -183,6 +191,9 @@ export class FunAsrClient {
             this.recText += text
           }
           this.onTextChange?.(this.recText)
+          if (this.stopping && data.is_final) {
+            this.finishStop()
+          }
         } catch {
           // ignore malformed payloads
         }

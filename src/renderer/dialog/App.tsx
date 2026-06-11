@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppConfig, ChatMessage } from '../../shared/types'
 import { formatHoldKeyLabel } from '../../shared/hold-key'
-import { mergeVoiceInput } from '../../shared/voice-input'
 import { useHoldToTalk } from '../shared/useHoldToTalk'
 import VoiceHoldButton from '../shared/VoiceHoldButton'
 import { collectFilePaths, FILE_ACCEPT, fileNameFromPath } from './dialog-files'
@@ -32,33 +31,39 @@ export default function App() {
   const [asrConfig, setAsrConfig] = useState<AppConfig['asr'] | null>(null)
   const sendRef = useRef<(overrideText?: string) => Promise<void>>(async () => {})
   const inputRef = useRef(input)
-  const voiceBaseInputRef = useRef<string | null>(null)
+  const preVoiceInputRef = useRef<string | null>(null)
+  const voiceSessionActiveRef = useRef(false)
   const canChat = Boolean(sessionId)
 
   useEffect(() => {
     inputRef.current = input
   }, [input])
 
+  const resetVoiceSession = useCallback(() => {
+    voiceSessionActiveRef.current = false
+    preVoiceInputRef.current = null
+  }, [])
+
   const beginVoiceInput = useCallback(() => {
-    if (voiceBaseInputRef.current === null) {
-      voiceBaseInputRef.current = inputRef.current
-    }
+    preVoiceInputRef.current = inputRef.current
+    voiceSessionActiveRef.current = true
   }, [])
 
   const applyVoiceText = useCallback((voiceText: string, final: boolean) => {
-    if (voiceBaseInputRef.current === null) {
-      voiceBaseInputRef.current = inputRef.current
+    if (!voiceSessionActiveRef.current) {
+      preVoiceInputRef.current = inputRef.current
+      voiceSessionActiveRef.current = true
     }
-    setInput(mergeVoiceInput(voiceBaseInputRef.current, voiceText))
-    if (final) voiceBaseInputRef.current = null
-  }, [])
+    setInput(voiceText)
+    if (final) resetVoiceSession()
+  }, [resetVoiceSession])
 
   const restoreVoiceInput = useCallback(() => {
-    if (voiceBaseInputRef.current !== null) {
-      setInput(voiceBaseInputRef.current)
-      voiceBaseInputRef.current = null
+    if (preVoiceInputRef.current !== null) {
+      setInput(preVoiceInputRef.current)
     }
-  }, [])
+    resetVoiceSession()
+  }, [resetVoiceSession])
 
   const holdToTalk = useHoldToTalk({
     asrConfig,
@@ -198,6 +203,8 @@ export default function App() {
       if ((!text && !files.length) || !sessionId || loading) return
 
       setInput('')
+      inputRef.current = ''
+      resetVoiceSession()
       setPendingFiles([])
       setError('')
       setLoading(true)
@@ -255,7 +262,7 @@ export default function App() {
         setLoading(false)
       }
     },
-    [input, pendingFiles, sessionId, loading]
+    [input, pendingFiles, sessionId, loading, resetVoiceSession]
   )
 
   useEffect(() => {

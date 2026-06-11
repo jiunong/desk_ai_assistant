@@ -38,7 +38,7 @@ export default function VoiceHoldButton({
     <button
       type="button"
       className={`voice-hold-btn ${phase} ${className}`.trim()}
-      disabled={disabled || phase === 'processing'}
+      disabled={disabled}
       onMouseDown={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -65,7 +65,7 @@ export default function VoiceHoldButton({
       aria-label={title ?? defaultTitle}
     >
       <span className="voice-hold-icon" aria-hidden>
-        {phase === 'processing' ? '⏳' : isRecording ? '🔴' : '🎤'}
+        {isRecording ? '🔴' : '🎤'}
       </span>
       {showLabel ? <span className="voice-hold-label">{isRecording ? '松手填入' : '按住说话'}</span> : null}
     </button>
