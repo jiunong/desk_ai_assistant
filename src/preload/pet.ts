@@ -15,7 +15,9 @@ contextBridge.exposeInMainWorld('petApi', {
   dropFiles: (paths: string[], prompt?: string) =>
     ipcRenderer.invoke('pet:dropFiles', paths, prompt),
   openChat: () => ipcRenderer.invoke('pet:openChat') as Promise<void>,
-  sendVoiceText: (text: string) => ipcRenderer.invoke('pet:sendVoiceText', text) as Promise<void>,
+  ensureDialogForVoice: () => ipcRenderer.invoke('pet:ensureDialogForVoice') as Promise<void>,
+  updateVoiceInput: (text: string, final: boolean) =>
+    ipcRenderer.invoke('pet:updateVoiceInput', text, final) as Promise<void>,
   getConfig: () => ipcRenderer.invoke('pet:getConfig'),
   moveWindow: (dx: number, dy: number) => ipcRenderer.send('pet:moveWindow', dx, dy),
   onSetState: (cb: (state: string) => void) => {

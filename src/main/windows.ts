@@ -257,14 +257,11 @@ export function attachFilesToActiveDialog(
   return true
 }
 
-export function sendTextToActiveDialog(text: string): boolean {
-  const trimmed = text.trim()
-  if (!trimmed) return false
-
+export function setInputTextToActiveDialog(text: string, final = false): boolean {
   const win = getActiveDialogWindow()
   if (!win) return false
 
-  win.webContents.send('dialog:sendText', { text: trimmed })
+  win.webContents.send('dialog:setInputText', { text, final })
   win.show()
   win.focus()
   return true

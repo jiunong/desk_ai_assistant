@@ -39,9 +39,9 @@ export default function App() {
   const holdToTalk = useHoldToTalk({
     asrConfig,
     disabled: busy,
-    onResult: async (text) => {
-      await window.petApi.sendVoiceText(text)
-    },
+    onRecordingStart: () => window.petApi.ensureDialogForVoice(),
+    onPartialResult: (text) => void window.petApi.updateVoiceInput(text, false),
+    onResult: (text) => window.petApi.updateVoiceInput(text, true),
     onError: (msg) => {
       setError(msg)
       setTimeout(() => setError(''), 5000)
@@ -193,7 +193,7 @@ export default function App() {
             onStart={startHold}
             onEnd={endHold}
             onCancel={cancelHold}
-            title={shortcutHint ? `按住说话，松开发送（${shortcutHint}）` : '按住说话，松开发送'}
+            title={shortcutHint ? `按住说话，松手填入对话框（${shortcutHint}）` : '按住说话，松手填入对话框'}
           />
         )}
       </div>

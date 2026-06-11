@@ -51,6 +51,8 @@ contextBridge.exposeInMainWorld('dialogApi', {  close: () => ipcRenderer.send('d
   onAttachFiles: (cb: (data: { filePaths: string[]; inputText?: string }) => void) =>
     subscribe('dialog:attachFiles', cb),
   onSendText: (cb: (data: { text: string }) => void) => subscribe('dialog:sendText', cb),
+  onSetInputText: (cb: (data: { text: string; final: boolean }) => void) =>
+    subscribe('dialog:setInputText', cb),
   onVoiceHold: (cb: (data: { action: 'down' | 'up' | 'cancel' }) => void) =>
     subscribe('dialog:voiceHold', cb),
   getAsrConfig: () =>

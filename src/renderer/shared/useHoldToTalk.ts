@@ -8,14 +8,20 @@ type AsrConfig = AppConfig['asr']
 
 export interface UseHoldToTalkOptions {
   asrConfig: AsrConfig | null
+  onRecordingStart?: () => void | Promise<void>
+  onPartialResult?: (text: string) => void
   onResult: (text: string) => void | Promise<void>
+  onCancel?: () => void
   onError?: (message: string) => void
   disabled?: boolean
 }
 
 export function useHoldToTalk({
   asrConfig,
+  onRecordingStart,
+  onPartialResult,
   onResult,
+  onCancel,
   onError,
   disabled = false
 }: UseHoldToTalkOptions) {
@@ -24,13 +30,19 @@ export function useHoldToTalk({
   const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const holdingRef = useRef(false)
   const phaseRef = useRef<HoldToTalkPhase>('idle')
+  const onRecordingStartRef = useRef(onRecordingStart)
+  const onPartialResultRef = useRef(onPartialResult)
   const onResultRef = useRef(onResult)
+  const onCancelRef = useRef(onCancel)
   const onErrorRef = useRef(onError)
 
   useEffect(() => {
+    onRecordingStartRef.current = onRecordingStart
+    onPartialResultRef.current = onPartialResult
     onResultRef.current = onResult
+    onCancelRef.current = onCancel
     onErrorRef.current = onError
-  }, [onResult, onError])
+  }, [onRecordingStart, onPartialResult, onResult, onCancel, onError])
 
   useEffect(() => {
     phaseRef.current = phase
@@ -54,11 +66,15 @@ export function useHoldToTalk({
   const beginRecording = useCallback(async () => {
     if (!asrConfig?.enabled || phaseRef.current === 'processing') return
 
-    const client = new FunAsrClient(asrConfig)
+    const client = new FunAsrClient(asrConfig, (text) => {
+      onPartialResultRef.current?.(text)
+    })
     clientRef.current = client
     setPhase('recording')
     try {
+      await onRecordingStartRef.current?.()
       await client.start()
+      onPartialResultRef.current?.('')
     } catch (err) {
       reset()
       onErrorRef.current?.(err instanceof Error ? err.message : '无法开始录音')
@@ -104,13 +120,9 @@ export function useHoldToTalk({
 
     setPhase('processing')
     try {
-      const text = (await clientRef.current?.stop())?.trim() ?? ''
+      const text = (await clientRef.current?.stop()) ?? ''
       clientRef.current = null
-      if (text) {
-        await onResultRef.current(text)
-      } else {
-        onErrorRef.current?.('未识别到语音内容')
-      }
+      await onResultRef.current(text)
     } catch (err) {
       onErrorRef.current?.(err instanceof Error ? err.message : '语音识别失败')
     } finally {
@@ -124,6 +136,7 @@ export function useHoldToTalk({
     clientRef.current?.cancel()
     clientRef.current = null
     setPhase('idle')
+    onCancelRef.current?.()
   }, [clearArmTimer])
 
   useEffect(() => () => reset(), [reset])
@@ -133,7 +146,7 @@ export function useHoldToTalk({
     phase === 'arming'
       ? `继续按住 ${((asrConfig?.holdDelayMs ?? 0) / 1000).toFixed(1)}s 开始说话…`
       : phase === 'recording'
-        ? '松开发送'
+        ? '松手填入输入框'
         : phase === 'processing'
           ? '识别中…'
           : ''

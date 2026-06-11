@@ -60,7 +60,7 @@ function HoldKeyField({
           </button>
         ) : null}
       </div>
-      <span className="hint">全局生效：长按该键达到触发时长后开始录音，松开发送到对话窗口</span>
+      <span className="hint">全局生效：长按该键达到触发时长后开始录音，识别内容实时显示在对话框输入框</span>
     </label>
   )
 }
@@ -99,7 +99,7 @@ export default function AsrSettings() {
     <div className="page">
       <h2>语音识别</h2>
       <p className="desc">
-        基于 FunASR WebSocket 服务。在宠物或对话窗口<strong>按住麦克风</strong>说话，松手后识别文字自动发送。
+        基于 FunASR WebSocket 服务。按住麦克风说话时，识别文字会<strong>实时显示在对话框输入框</strong>，松手后填入内容（不自动发送，可编辑后按 Enter 发送）。
       </p>
 
       <label className="checkbox-row">
@@ -188,7 +188,7 @@ export default function AsrSettings() {
         />
       </label>
       <p className="hint">
-        例如设为 2000 表示长按 {formatHoldKeyLabel(config.asr.holdKey || 'Space')} 满 2 秒后才开始录音，松手即发送。在输入框内打字时不会触发。
+        例如设为 2000 表示长按 {formatHoldKeyLabel(config.asr.holdKey || 'Space')} 满 2 秒后才开始录音，松手将文字填入输入框。在输入框内打字时不会触发。
       </p>
 
       <div className="actions">

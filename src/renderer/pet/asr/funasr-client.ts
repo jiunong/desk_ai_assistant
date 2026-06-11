@@ -75,7 +75,10 @@ export class FunAsrClient {
   private resolveStop: ((text: string) => void) | null = null
   private stopTimer: ReturnType<typeof setTimeout> | null = null
 
-  constructor(private readonly config: AsrConfig) {}
+  constructor(
+    private readonly config: AsrConfig,
+    private readonly onTextChange?: (text: string) => void
+  ) {}
 
   async start(): Promise<void> {
     if (!this.config.wssUrl.match(/wss:\S*|ws:\S*/i)) {
@@ -179,6 +182,7 @@ export class FunAsrClient {
           } else {
             this.recText += text
           }
+          this.onTextChange?.(this.recText)
         } catch {
           // ignore malformed payloads
         }

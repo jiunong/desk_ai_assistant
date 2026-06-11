@@ -5,7 +5,8 @@ export interface PetApi {
   resolvePaths: (files: File[]) => string[]
   dropFiles: (paths: string[], prompt?: string) => Promise<void>
   openChat: () => Promise<void>
-  sendVoiceText: (text: string) => Promise<void>
+  ensureDialogForVoice: () => Promise<void>
+  updateVoiceInput: (text: string, final: boolean) => Promise<void>
   getConfig: () => Promise<{ name: string; size: number; asr: import('./types').AppConfig['asr'] }>
   moveWindow: (dx: number, dy: number) => void
   onSetState: (cb: (state: PetState) => void) => void
@@ -47,6 +48,7 @@ export interface DialogApi {
   ) => () => void
   onAttachFiles: (cb: (data: { filePaths: string[]; inputText?: string }) => void) => () => void
   onSendText: (cb: (data: { text: string }) => void) => () => void
+  onSetInputText: (cb: (data: { text: string; final: boolean }) => void) => () => void
   onVoiceHold: (cb: (data: { action: 'down' | 'up' | 'cancel' }) => void) => () => void
   getAsrConfig: () => Promise<import('./types').AppConfig['asr']>
   takeScreenshot: () => Promise<{ ok: boolean; error?: string; cancelled?: boolean }>

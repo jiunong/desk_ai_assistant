@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppConfig, ChatMessage } from '../../shared/types'
 import { formatHoldKeyLabel } from '../../shared/hold-key'
+import { mergeVoiceInput } from '../../shared/voice-input'
 import { useHoldToTalk } from '../shared/useHoldToTalk'
 import VoiceHoldButton from '../shared/VoiceHoldButton'
 import { collectFilePaths, FILE_ACCEPT, fileNameFromPath } from './dialog-files'
@@ -30,14 +31,42 @@ export default function App() {
   const autoSendPendingRef = useRef<string | null>(null)
   const [asrConfig, setAsrConfig] = useState<AppConfig['asr'] | null>(null)
   const sendRef = useRef<(overrideText?: string) => Promise<void>>(async () => {})
+  const inputRef = useRef(input)
+  const voiceBaseInputRef = useRef<string | null>(null)
   const canChat = Boolean(sessionId)
+
+  useEffect(() => {
+    inputRef.current = input
+  }, [input])
+
+  const beginVoiceInput = useCallback(() => {
+    if (voiceBaseInputRef.current === null) {
+      voiceBaseInputRef.current = inputRef.current
+    }
+  }, [])
+
+  const applyVoiceText = useCallback((voiceText: string, final: boolean) => {
+    if (voiceBaseInputRef.current === null) {
+      voiceBaseInputRef.current = inputRef.current
+    }
+    setInput(mergeVoiceInput(voiceBaseInputRef.current, voiceText))
+    if (final) voiceBaseInputRef.current = null
+  }, [])
+
+  const restoreVoiceInput = useCallback(() => {
+    if (voiceBaseInputRef.current !== null) {
+      setInput(voiceBaseInputRef.current)
+      voiceBaseInputRef.current = null
+    }
+  }, [])
 
   const holdToTalk = useHoldToTalk({
     asrConfig,
     disabled: loading || !canChat,
-    onResult: async (text) => {
-      await sendRef.current(text)
-    },
+    onRecordingStart: beginVoiceInput,
+    onPartialResult: (text) => applyVoiceText(text, false),
+    onResult: (text) => applyVoiceText(text, true),
+    onCancel: restoreVoiceInput,
     onError: (msg) => setError(msg)
   })
 
@@ -50,12 +79,19 @@ export default function App() {
 
   useEffect(() => {
     window.dialogApi.getAsrConfig().then(setAsrConfig)
-    return window.dialogApi.onVoiceHold(({ action }) => {
+    const offVoiceHold = window.dialogApi.onVoiceHold(({ action }) => {
       if (action === 'down') startHold()
       else if (action === 'up') void endHold()
       else cancelHold()
     })
-  }, [startHold, endHold, cancelHold])
+    const offSetInput = window.dialogApi.onSetInputText(({ text, final }) => {
+      applyVoiceText(text, final)
+    })
+    return () => {
+      offVoiceHold()
+      offSetInput()
+    }
+  }, [startHold, endHold, cancelHold, applyVoiceText])
 
   useEffect(() => {
     return window.dialogApi.onChatStream(({ sessionId: sid, delta }) => {
@@ -449,7 +485,7 @@ export default function App() {
                 ) : (
                   '快捷键'
                 )}{' '}
-                说话，松开发送
+                说话，实时显示在输入框，松手确认
               </span>
             </div>
           )}
@@ -502,7 +538,7 @@ export default function App() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
-            placeholder="继续提问，可拖入/粘贴/截图添加图片…（Enter 发送，Shift+Enter 换行，按住语音按钮说话）"
+            placeholder="继续提问…（Enter 发送，按住语音按钮说话，识别内容实时显示在此）"
             rows={2}
             disabled={loading || voiceActive}
           />

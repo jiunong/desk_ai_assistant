@@ -23,8 +23,8 @@ export default function VoiceHoldButton({
 }: VoiceHoldButtonProps) {
   const isRecording = phase === 'recording' || phase === 'arming'
   const defaultTitle = isRecording
-    ? '松开发送语音'
-    : '按住说话，松开发送'
+    ? '松手填入输入框'
+    : '按住说话，松手填入输入框'
 
   const stopHold = () => {
     if (phase === 'arming') {
@@ -67,7 +67,7 @@ export default function VoiceHoldButton({
       <span className="voice-hold-icon" aria-hidden>
         {phase === 'processing' ? '⏳' : isRecording ? '🔴' : '🎤'}
       </span>
-      {showLabel ? <span className="voice-hold-label">{isRecording ? '松开发送' : '按住说话'}</span> : null}
+      {showLabel ? <span className="voice-hold-label">{isRecording ? '松手填入' : '按住说话'}</span> : null}
     </button>
   )
 }

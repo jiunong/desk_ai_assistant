@@ -42,7 +42,8 @@ import {
   setPetVisibilityListener,
   destroyConfigWindowForQuit,
   attachFilesToActiveDialog,
-  sendTextToActiveDialog
+  setInputTextToActiveDialog,
+  hasOpenDialog
 } from './windows'
 
 
@@ -89,11 +90,11 @@ function handleOpenDirectChat(
   pendingFilePaths?: string[],
   pendingInputText?: string,
   autoSendInput?: boolean
-): void {
+): Promise<void> {
   sendPetState('talking')
   const { sessionId, welcome } = analysisService.openDirectChat()
   const index = getOpenDialogCount() + 1
-  showDialogWindow({
+  return showDialogWindow({
     sessionId,
     title: index > 1 ? `与小智对话 #${index}` : '与小智对话',
     messages: [{ role: 'assistant', content: welcome, createdAt: new Date().toISOString() }],
@@ -102,16 +103,21 @@ function handleOpenDirectChat(
     ...(pendingFilePaths?.length ? { pendingFilePaths } : {}),
     ...(pendingInputText ? { pendingInputText } : {}),
     ...(autoSendInput ? { autoSendInput: true } : {})
-  })
+  }).then(() => {})
 }
 
-function handleVoiceText(text: string): void {
-  const trimmed = text.trim()
-  if (!trimmed) return
-
+async function ensureDialogForVoice(): Promise<void> {
   sendPetState('talking')
-  if (sendTextToActiveDialog(trimmed)) return
-  handleOpenDirectChat(undefined, trimmed, true)
+  if (hasOpenDialog()) return
+  await handleOpenDirectChat()
+}
+
+async function handleVoiceInputUpdate(text: string, final: boolean): Promise<void> {
+  sendPetState('talking')
+  if (!hasOpenDialog()) {
+    await handleOpenDirectChat()
+  }
+  setInputTextToActiveDialog(text, final)
 }
 
 function deliverScreenshotToDialog(filePath: string, text?: string): void {
@@ -224,9 +230,11 @@ function setupIpc(): void {
     asr: config.asr
   }))
 
-  ipcMain.handle('pet:sendVoiceText', (_e, text: string) => {
-    handleVoiceText(text)
-  })
+  ipcMain.handle('pet:ensureDialogForVoice', () => ensureDialogForVoice())
+
+  ipcMain.handle('pet:updateVoiceInput', (_e, text: string, final: boolean) =>
+    handleVoiceInputUpdate(text, final)
+  )
 
 
 
