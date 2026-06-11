@@ -5,11 +5,15 @@ export interface PetApi {
   resolvePaths: (files: File[]) => string[]
   dropFiles: (paths: string[], prompt?: string) => Promise<void>
   openChat: () => Promise<void>
-  getConfig: () => Promise<{ name: string; size: number }>
+  sendVoiceText: (text: string) => Promise<void>
+  getConfig: () => Promise<{ name: string; size: number; asr: import('./types').AppConfig['asr'] }>
   moveWindow: (dx: number, dy: number) => void
   onSetState: (cb: (state: PetState) => void) => void
   onError: (cb: (msg: string) => void) => void
-  onConfigUpdated: (cb: (config: { name: string; size: number }) => void) => void
+  onConfigUpdated: (
+    cb: (config: { name: string; size: number; asr: import('./types').AppConfig['asr'] }) => void
+  ) => void
+  onVoiceHold: (cb: (data: { action: 'down' | 'up' | 'cancel' }) => void) => () => void
   openConfig: () => Promise<void>
 }
 
@@ -21,6 +25,7 @@ export interface DialogInitPayload {
   meta?: { usedSkills?: string[]; usedMcpTools?: string[] }
   pendingFilePaths?: string[]
   pendingInputText?: string
+  autoSendInput?: boolean
 }
 
 export interface DialogApi {
@@ -41,6 +46,9 @@ export interface DialogApi {
     }) => void
   ) => () => void
   onAttachFiles: (cb: (data: { filePaths: string[]; inputText?: string }) => void) => () => void
+  onSendText: (cb: (data: { text: string }) => void) => () => void
+  onVoiceHold: (cb: (data: { action: 'down' | 'up' | 'cancel' }) => void) => () => void
+  getAsrConfig: () => Promise<import('./types').AppConfig['asr']>
   takeScreenshot: () => Promise<{ ok: boolean; error?: string; cancelled?: boolean }>
   previewFile: (filePath: string) => Promise<
     | { ok: true; kind: 'image'; name: string; dataUrl: string; size: number }

@@ -190,6 +190,33 @@ body,
   transform: scale(0.94);
 }
 
+.pet-voice-btn {
+  position: absolute;
+  left: 2px;
+  bottom: 6px;
+  z-index: 10;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.88);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+}
+
+.pet-container:hover .pet-voice-btn,
+.pet-container.is-recording .pet-voice-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.pet-voice-btn:hover:not(:disabled) {
+  border-color: rgba(9, 132, 227, 0.55);
+  box-shadow: 0 4px 16px rgba(9, 132, 227, 0.22);
+}
+
 .pet-hint {
   margin-top: 4px;
   font-size: 11px;

@@ -9,6 +9,7 @@ export interface DialogInitPayload {
   meta?: { usedSkills?: string[]; usedMcpTools?: string[] }
   pendingFilePaths?: string[]
   pendingInputText?: string
+  autoSendInput?: boolean
 }
 
 function subscribe<T>(channel: string, cb: (data: T) => void): () => void {
@@ -49,6 +50,11 @@ contextBridge.exposeInMainWorld('dialogApi', {  close: () => ipcRenderer.send('d
   ) => subscribe('dialog:streamEnd', cb),
   onAttachFiles: (cb: (data: { filePaths: string[]; inputText?: string }) => void) =>
     subscribe('dialog:attachFiles', cb),
+  onSendText: (cb: (data: { text: string }) => void) => subscribe('dialog:sendText', cb),
+  onVoiceHold: (cb: (data: { action: 'down' | 'up' | 'cancel' }) => void) =>
+    subscribe('dialog:voiceHold', cb),
+  getAsrConfig: () =>
+    ipcRenderer.invoke('dialog:getAsrConfig') as Promise<import('../shared/types').AppConfig['asr']>,
   takeScreenshot: () => ipcRenderer.invoke('dialog:takeScreenshot') as Promise<{ ok: boolean; error?: string; cancelled?: boolean }>,
   previewFile: (filePath: string) => ipcRenderer.invoke('dialog:previewFile', filePath),
   resolveAttachmentPath: (sessionId: string, fileName: string) =>

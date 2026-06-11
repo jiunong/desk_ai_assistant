@@ -14,7 +14,8 @@ function deepMergeConfig(base: AppConfig, patch: Partial<AppConfig>): AppConfig 
     mcp: patch.mcp ?? base.mcp,
     skills: patch.skills ?? base.skills,
     configServer: { ...base.configServer, ...patch.configServer },
-    shortcuts: { ...base.shortcuts, ...patch.shortcuts }
+    shortcuts: { ...base.shortcuts, ...patch.shortcuts },
+    asr: { ...base.asr, ...patch.asr }
   }
 }
 

@@ -1,6 +1,24 @@
+import { cpSync, existsSync, mkdirSync } from 'fs'
 import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+
+function copyPetAsrAssets(): { name: string; closeBundle: () => void } {
+  return {
+    name: 'copy-pet-asr-assets',
+    closeBundle() {
+      const src = resolve(__dirname, 'src/renderer/pet/asr')
+      if (!existsSync(src)) return
+      for (const entry of ['pet', 'dialog']) {
+        const dest = resolve(__dirname, `out/renderer/${entry}/asr`)
+        mkdirSync(dest, { recursive: true })
+        for (const file of ['recorder-core.js', 'wav.js', 'pcm.js']) {
+          cpSync(resolve(src, file), resolve(dest, file))
+        }
+      }
+    }
+  }
+}
 
 export default defineConfig({
   main: {
@@ -47,6 +65,6 @@ export default defineConfig({
         }
       }
     },
-    plugins: [react()]
+    plugins: [react(), copyPetAsrAssets()]
   }
 })

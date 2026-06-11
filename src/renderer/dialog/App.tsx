@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatMessage } from '../../shared/types'
+import type { AppConfig, ChatMessage } from '../../shared/types'
+import { formatHoldKeyLabel } from '../../shared/hold-key'
+import { useHoldToTalk } from '../shared/useHoldToTalk'
+import VoiceHoldButton from '../shared/VoiceHoldButton'
 import { collectFilePaths, FILE_ACCEPT, fileNameFromPath } from './dialog-files'
 import AttachmentPreview, { type AttachmentPreviewTarget } from './AttachmentPreview'
 import { isImagePath } from './attachment-utils'
 import MarkdownContent from './MarkdownContent'
 import WindowResizeHandles from './WindowResizeHandles'
+import '../shared/voice-hold.css'
 
 export default function App() {
   const params = new URLSearchParams(window.location.search)
@@ -23,11 +27,35 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const sessionIdRef = useRef(sessionId)
+  const autoSendPendingRef = useRef<string | null>(null)
+  const [asrConfig, setAsrConfig] = useState<AppConfig['asr'] | null>(null)
+  const sendRef = useRef<(overrideText?: string) => Promise<void>>(async () => {})
   const canChat = Boolean(sessionId)
+
+  const holdToTalk = useHoldToTalk({
+    asrConfig,
+    disabled: loading || !canChat,
+    onResult: async (text) => {
+      await sendRef.current(text)
+    },
+    onError: (msg) => setError(msg)
+  })
+
+  const { startHold, endHold, cancelHold, isActive: voiceActive, phase: voicePhase, hint: voiceHint } =
+    holdToTalk
 
   useEffect(() => {
     sessionIdRef.current = sessionId
   }, [sessionId])
+
+  useEffect(() => {
+    window.dialogApi.getAsrConfig().then(setAsrConfig)
+    return window.dialogApi.onVoiceHold(({ action }) => {
+      if (action === 'down') startHold()
+      else if (action === 'up') void endHold()
+      else cancelHold()
+    })
+  }, [startHold, endHold, cancelHold])
 
   useEffect(() => {
     return window.dialogApi.onChatStream(({ sessionId: sid, delta }) => {
@@ -110,6 +138,9 @@ export default function App() {
       if (payload.pendingInputText) {
         setInput(payload.pendingInputText)
       }
+      if (payload.autoSendInput && payload.pendingInputText?.trim()) {
+        autoSendPendingRef.current = payload.pendingInputText.trim()
+      }
       const last = payload.messages[payload.messages.length - 1]
       if (last?.role === 'assistant' && !last.content) {
         setLoading(true)
@@ -123,6 +154,92 @@ export default function App() {
       if (inputText) setInput(inputText)
     })
   }, [appendPendingPaths])
+
+  const send = useCallback(
+    async (overrideText?: string) => {
+      const text = (overrideText ?? input).trim()
+      const files = pendingFiles
+      if ((!text && !files.length) || !sessionId || loading) return
+
+      setInput('')
+      setPendingFiles([])
+      setError('')
+      setLoading(true)
+
+      const displayContent =
+        text || (files.length ? `请分析附带文件：${files.map(fileNameFromPath).join('、')}` : '')
+
+      const userMsg: ChatMessage = {
+        role: 'user',
+        content: displayContent,
+        createdAt: new Date().toISOString(),
+        ...(files.length
+          ? {
+              attachedFileNames: files.map(fileNameFromPath),
+              attachedFilePaths: files
+            }
+          : {})
+      }
+      setMessages((prev) => [
+        ...prev,
+        userMsg,
+        { role: 'assistant', content: '', createdAt: new Date().toISOString() }
+      ])
+
+      try {
+        const result = await window.dialogApi.chat(sessionId, displayContent, files)
+        setMessages((prev) => {
+          const copy = [...prev]
+          const last = copy[copy.length - 1]
+          if (last?.role === 'assistant') {
+            copy[copy.length - 1] = {
+              ...last,
+              content: result.reply,
+              createdAt: new Date().toISOString()
+            }
+          }
+          return copy
+        })
+        if (result.fileNames.length) {
+          setFileNames(result.fileNames)
+        }
+        if (result.usedMcpTools.length) {
+          setMeta((m) => ({ ...m, usedMcpTools: result.usedMcpTools }))
+        }
+      } catch (err) {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last?.role === 'assistant' && !last.content) {
+            return prev.slice(0, -1)
+          }
+          return prev
+        })
+        setError(err instanceof Error ? err.message : '发送失败')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [input, pendingFiles, sessionId, loading]
+  )
+
+  useEffect(() => {
+    sendRef.current = send
+  }, [send])
+
+  useEffect(() => {
+    return window.dialogApi.onSendText(({ text }) => {
+      if (text.trim() && sessionIdRef.current) {
+        void send(text.trim())
+      }
+    })
+  }, [send])
+
+  useEffect(() => {
+    if (!autoSendPendingRef.current || !sessionId || loading) return
+    const text = autoSendPendingRef.current
+    autoSendPendingRef.current = null
+    void send(text)
+  }, [sessionId, loading, send])
 
   useEffect(() => {
     scrollToBottom()
@@ -193,70 +310,6 @@ export default function App() {
   const removePendingFile = (index: number) => {
     setPendingFiles((prev) => prev.filter((_, i) => i !== index))
   }
-
-  const send = useCallback(async () => {
-    const text = input.trim()
-    const files = pendingFiles
-    if ((!text && !files.length) || !sessionId || loading) return
-
-    setInput('')
-    setPendingFiles([])
-    setError('')
-    setLoading(true)
-
-    const displayContent =
-      text || (files.length ? `请分析附带文件：${files.map(fileNameFromPath).join('、')}` : '')
-
-    const userMsg: ChatMessage = {
-      role: 'user',
-      content: displayContent,
-      createdAt: new Date().toISOString(),
-      ...(files.length
-        ? {
-            attachedFileNames: files.map(fileNameFromPath),
-            attachedFilePaths: files
-          }
-        : {})
-    }
-    setMessages((prev) => [
-      ...prev,
-      userMsg,
-      { role: 'assistant', content: '', createdAt: new Date().toISOString() }
-    ])
-
-    try {
-      const result = await window.dialogApi.chat(sessionId, displayContent, files)
-      setMessages((prev) => {
-        const copy = [...prev]
-        const last = copy[copy.length - 1]
-        if (last?.role === 'assistant') {
-          copy[copy.length - 1] = {
-            ...last,
-            content: result.reply,
-            createdAt: new Date().toISOString()
-          }
-        }
-        return copy
-      })
-      if (result.fileNames.length) {
-        setFileNames(result.fileNames)
-      }
-      if (result.usedMcpTools.length) {
-        setMeta((m) => ({ ...m, usedMcpTools: result.usedMcpTools }))
-      }
-    } catch (err) {
-      setMessages((prev) => {
-        const last = prev[prev.length - 1]
-        if (last?.role === 'assistant' && !last.content) {
-          return prev.slice(0, -1)
-        }
-        return prev
-      })
-      setError(err instanceof Error ? err.message : '发送失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [input, pendingFiles, sessionId, loading])
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -384,6 +437,23 @@ export default function App() {
       {canChat ? (
         <div className={`chat-input-area ${dragOver ? 'drag-over' : ''}`}>
           {dragOver && <div className="drop-hint">松开即可添加文件或图片</div>}
+          {asrConfig?.enabled && !voiceActive && (
+            <div className="voice-hint-bar">
+              <span>
+                按住 <strong>🎤 语音</strong> 或{' '}
+                {asrConfig.enableHoldShortcut && asrConfig.holdKey ? (
+                  <>
+                    长按 <strong>{formatHoldKeyLabel(asrConfig.holdKey)}</strong>{' '}
+                    {(asrConfig.holdDelayMs / 1000).toFixed(1)}s
+                  </>
+                ) : (
+                  '快捷键'
+                )}{' '}
+                说话，松开发送
+              </span>
+            </div>
+          )}
+          {voiceActive && voiceHint && <div className="voice-hint-bar is-active">{voiceHint}</div>}
           {error && <div className="chat-error">{error}</div>}
           {pendingFiles.length > 0 && (
             <div className="pending-files">
@@ -432,9 +502,9 @@ export default function App() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
-            placeholder="继续提问，可拖入/粘贴/截图添加图片…（Enter 发送，Shift+Enter 换行）"
+            placeholder="继续提问，可拖入/粘贴/截图添加图片…（Enter 发送，Shift+Enter 换行，按住语音按钮说话）"
             rows={2}
-            disabled={loading}
+            disabled={loading || voiceActive}
           />
           <div className="chat-actions">
             <input
@@ -445,11 +515,22 @@ export default function App() {
               hidden
               onChange={onPickFiles}
             />
+            {asrConfig?.enabled ? (
+              <VoiceHoldButton
+                phase={voicePhase}
+                disabled={loading || !canChat}
+                className="dialog-voice-btn"
+                onStart={startHold}
+                onEnd={endHold}
+                onCancel={cancelHold}
+                showLabel
+              />
+            ) : null}
             <button
               type="button"
               className="attach-btn"
               onClick={() => void onScreenshot()}
-              disabled={loading}
+              disabled={loading || voiceActive}
               title="区域截图并添加到待发送附件"
             >
               截图
@@ -458,11 +539,16 @@ export default function App() {
               type="button"
               className="attach-btn"
               onClick={() => fileInputRef.current?.click()}
-              disabled={loading}
+              disabled={loading || voiceActive}
             >
               添加文件
             </button>
-            <button className="send-btn" onClick={() => void send()} disabled={loading || !canSend}>
+            <button
+              className="send-btn"
+              onClick={() => void send()}
+              disabled={loading || voiceActive || !canSend}
+              title="发送"
+            >
               {loading ? '思考中…' : '发送'}
             </button>
           </div>

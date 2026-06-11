@@ -20,6 +20,7 @@ import { LlmService } from './services/llm'
 import { saveTempFiles } from './services/temp-files'
 import { previewFile } from './services/file-preview'
 import { shortcutManager } from './services/shortcut-manager'
+import { holdToTalkManager } from './services/hold-to-talk-manager'
 import { isScreenshotActive, startScreenshotCapture } from './services/screenshot'
 
 import {
@@ -40,7 +41,8 @@ import {
   resizePetWindow,
   setPetVisibilityListener,
   destroyConfigWindowForQuit,
-  attachFilesToActiveDialog
+  attachFilesToActiveDialog,
+  sendTextToActiveDialog
 } from './windows'
 
 
@@ -56,7 +58,8 @@ let analysisService: AnalysisService
 function broadcastPetConfig(): void {
   getPetWindow()?.webContents.send('pet:configUpdated', {
     name: config.pet.name,
-    size: config.pet.size
+    size: config.pet.size,
+    asr: config.asr
   })
 }
 
@@ -76,11 +79,17 @@ function applyConfig(newConfig: AppConfig): void {
 
   applyShortcuts()
 
+  holdToTalkManager.apply(config)
+
 }
 
 
 
-function handleOpenDirectChat(pendingFilePaths?: string[], pendingInputText?: string): void {
+function handleOpenDirectChat(
+  pendingFilePaths?: string[],
+  pendingInputText?: string,
+  autoSendInput?: boolean
+): void {
   sendPetState('talking')
   const { sessionId, welcome } = analysisService.openDirectChat()
   const index = getOpenDialogCount() + 1
@@ -91,8 +100,18 @@ function handleOpenDirectChat(pendingFilePaths?: string[], pendingInputText?: st
     fileNames: [],
     meta: {},
     ...(pendingFilePaths?.length ? { pendingFilePaths } : {}),
-    ...(pendingInputText ? { pendingInputText } : {})
+    ...(pendingInputText ? { pendingInputText } : {}),
+    ...(autoSendInput ? { autoSendInput: true } : {})
   })
+}
+
+function handleVoiceText(text: string): void {
+  const trimmed = text.trim()
+  if (!trimmed) return
+
+  sendPetState('talking')
+  if (sendTextToActiveDialog(trimmed)) return
+  handleOpenDirectChat(undefined, trimmed, true)
 }
 
 function deliverScreenshotToDialog(filePath: string, text?: string): void {
@@ -201,8 +220,13 @@ function setupIpc(): void {
 
   ipcMain.handle('pet:getConfig', () => ({
     name: config.pet.name,
-    size: config.pet.size
+    size: config.pet.size,
+    asr: config.asr
   }))
+
+  ipcMain.handle('pet:sendVoiceText', (_e, text: string) => {
+    handleVoiceText(text)
+  })
 
 
 
@@ -249,7 +273,7 @@ function setupIpc(): void {
 
   ipcMain.handle('config:save', (_e, partial: Partial<AppConfig>) => {
 
-    config = { ...config, ...partial, llm: { ...config.llm, ...partial.llm }, pet: { ...config.pet, ...partial.pet }, files: { ...config.files, ...partial.files }, memory: { ...config.memory, ...partial.memory }, mcp: partial.mcp ?? config.mcp, skills: partial.skills ?? config.skills, configServer: { ...config.configServer, ...partial.configServer }, shortcuts: { ...config.shortcuts, ...partial.shortcuts } }
+    config = { ...config, ...partial, llm: { ...config.llm, ...partial.llm }, pet: { ...config.pet, ...partial.pet }, files: { ...config.files, ...partial.files }, memory: { ...config.memory, ...partial.memory }, mcp: partial.mcp ?? config.mcp, skills: partial.skills ?? config.skills, configServer: { ...config.configServer, ...partial.configServer }, shortcuts: { ...config.shortcuts, ...partial.shortcuts }, asr: { ...config.asr, ...partial.asr } }
 
     saveConfig(config)
 
@@ -301,6 +325,8 @@ function setupIpc(): void {
       }
     }
   )
+
+  ipcMain.handle('dialog:getAsrConfig', () => config.asr)
 
   ipcMain.handle('dialog:resolveAttachmentPath', (_e, sessionId: string, fileName: string) => {
     return analysisService.resolveAttachmentPath(sessionId, fileName)
@@ -387,6 +413,12 @@ app.whenReady().then(async () => {
     config.shortcuts = { ...DEFAULT_CONFIG.shortcuts }
   }
 
+  if (!config.asr) {
+    config.asr = { ...DEFAULT_CONFIG.asr }
+  } else {
+    config.asr = { ...DEFAULT_CONFIG.asr, ...config.asr }
+  }
+
   if (config.skills.enabled.length === 0) {
 
     config.skills.enabled = ['doc-summarize', 'doc-compare']
@@ -415,6 +447,8 @@ app.whenReady().then(async () => {
 
   applyShortcuts()
 
+  holdToTalkManager.apply(config)
+
 })
 
 
@@ -427,6 +461,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   shortcutManager.unregisterAll()
+  holdToTalkManager.shutdown()
   destroyPetWindowForQuit()
   destroyAllDialogWindowsForQuit()
   destroyConfigWindowForQuit()

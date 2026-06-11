@@ -1,4 +1,5 @@
 export type PetSkin = 'cat' | 'fox' | 'robot'
+export type AsrMode = '2pass' | 'online' | 'offline'
 
 export interface AppConfig {
   llm: {
@@ -40,6 +41,16 @@ export interface AppConfig {
     openChat: string
     screenshot: string
     togglePet: string
+  }
+  asr: {
+    enabled: boolean
+    wssUrl: string
+    mode: AsrMode
+    useItn: boolean
+    hotwords: string
+    enableHoldShortcut: boolean
+    holdKey: string
+    holdDelayMs: number
   }
 }
 
@@ -173,5 +184,15 @@ export const DEFAULT_CONFIG: AppConfig = {
     openChat: 'CommandOrControl+Shift+C',
     screenshot: 'CommandOrControl+Shift+S',
     togglePet: 'CommandOrControl+Shift+P'
+  },
+  asr: {
+    enabled: true,
+    wssUrl: 'wss://127.0.0.1:10095/',
+    mode: '2pass',
+    useItn: false,
+    hotwords: '',
+    enableHoldShortcut: true,
+    holdKey: 'Space',
+    holdDelayMs: 2000
   }
 }

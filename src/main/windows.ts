@@ -3,6 +3,7 @@ import { join } from 'path'
 import { AppConfig, ChatMessage } from '../../shared/types'
 import { getConfigPageUrl } from './config-server'
 import { getPetWindowSize } from './pet-window'
+import { holdToTalkManager } from './services/hold-to-talk-manager'
 
 let petWindow: BrowserWindow | null = null
 let configWindow: BrowserWindow | null = null
@@ -25,6 +26,7 @@ export interface DialogInitPayload {
   meta?: { usedSkills?: string[]; usedMcpTools?: string[] }
   pendingFilePaths?: string[]
   pendingInputText?: string
+  autoSendInput?: boolean
 }
 
 function preloadPath(name: string): string {
@@ -80,6 +82,7 @@ export function createPetWindow(config: AppConfig): BrowserWindow {
   })
 
   attachPetWindowHandlers(petWindow)
+  holdToTalkManager.attachToWindow(petWindow)
   petWindow.setIgnoreMouseEvents(false)
 
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -176,6 +179,7 @@ export function showDialogWindow(payload: DialogInitPayload): Promise<BrowserWin
   }
 
   dialogWindows.set(windowKey, win)
+  holdToTalkManager.attachToWindow(win)
 
   win.on('focus', () => {
     lastFocusedDialogKey = windowKey
@@ -221,42 +225,49 @@ export function sendPetError(message: string): void {
   petWindow?.webContents.send('pet:error', message)
 }
 
+function getActiveDialogWindow(): BrowserWindow | null {
+  for (const win of dialogWindows.values()) {
+    if (!win.isDestroyed() && win.isFocused()) return win
+  }
+
+  if (lastFocusedDialogKey) {
+    const win = dialogWindows.get(lastFocusedDialogKey)
+    if (win && !win.isDestroyed()) return win
+  }
+
+  const first = dialogWindows.values().next().value
+  if (first && !first.isDestroyed()) return first
+
+  return null
+}
+
 export function attachFilesToActiveDialog(
   filePaths: string[],
   inputText?: string
 ): boolean {
   if (!filePaths.length && !inputText) return false
 
+  const win = getActiveDialogWindow()
+  if (!win) return false
+
   const payload = { filePaths, ...(inputText ? { inputText } : {}) }
+  win.webContents.send('dialog:attachFiles', payload)
+  win.show()
+  win.focus()
+  return true
+}
 
-  for (const win of dialogWindows.values()) {
-    if (!win.isDestroyed() && win.isFocused()) {
-      win.webContents.send('dialog:attachFiles', payload)
-      win.show()
-      win.focus()
-      return true
-    }
-  }
+export function sendTextToActiveDialog(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
 
-  if (lastFocusedDialogKey) {
-    const win = dialogWindows.get(lastFocusedDialogKey)
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('dialog:attachFiles', payload)
-      win.show()
-      win.focus()
-      return true
-    }
-  }
+  const win = getActiveDialogWindow()
+  if (!win) return false
 
-  const first = dialogWindows.values().next().value
-  if (first && !first.isDestroyed()) {
-    first.webContents.send('dialog:attachFiles', payload)
-    first.show()
-    first.focus()
-    return true
-  }
-
-  return false
+  win.webContents.send('dialog:sendText', { text: trimmed })
+  win.show()
+  win.focus()
+  return true
 }
 
 export function hasOpenDialog(): boolean {
@@ -294,6 +305,7 @@ export function showConfigWindow(config: AppConfig): void {
     : getConfigPageUrl(config)
 
   void configWindow.loadURL(configUrl)
+  holdToTalkManager.attachToWindow(configWindow)
   configWindow.once('ready-to-show', () => {
     configWindow?.show()
     configWindow?.focus()

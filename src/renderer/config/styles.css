@@ -59,6 +59,12 @@ main {
   margin-bottom: 8px;
 }
 
+.section-title {
+  font-size: 16px;
+  margin: 28px 0 12px;
+  color: #2d3436;
+}
+
 .page h3 {
   font-size: 16px;
   margin: 24px 0 12px;
@@ -231,6 +237,33 @@ code {
 }
 
 .checkbox-row input[type='checkbox'] {
+  width: auto;
+  margin: 0;
+}
+
+.radio-group {
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  border: 1px solid #dfe6e9;
+  border-radius: 8px;
+  background: white;
+}
+
+.radio-group legend {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.radio-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 16px;
+  font-size: 14px;
+}
+
+.radio-inline input[type='radio'] {
   width: auto;
   margin: 0;
 }
