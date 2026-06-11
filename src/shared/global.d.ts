@@ -19,6 +19,8 @@ export interface DialogInitPayload {
   messages: import('./types').ChatMessage[]
   fileNames: string[]
   meta?: { usedSkills?: string[]; usedMcpTools?: string[] }
+  pendingFilePaths?: string[]
+  pendingInputText?: string
 }
 
 export interface DialogApi {
@@ -38,6 +40,15 @@ export interface DialogApi {
       usedSkills?: string[]
     }) => void
   ) => () => void
+  onAttachFiles: (cb: (data: { filePaths: string[]; inputText?: string }) => void) => () => void
+  takeScreenshot: () => Promise<{ ok: boolean; error?: string; cancelled?: boolean }>
+  previewFile: (filePath: string) => Promise<
+    | { ok: true; kind: 'image'; name: string; dataUrl: string; size: number }
+    | { ok: true; kind: 'text'; name: string; text: string; truncated: boolean; size: number }
+    | { ok: true; kind: 'unsupported'; name: string; size: number; extension: string }
+    | { ok: false; error: string }
+  >
+  resolveAttachmentPath: (sessionId: string, fileName: string) => Promise<string | null>
   chat: (
     sessionId: string,
     message: string,

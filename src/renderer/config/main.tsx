@@ -5,6 +5,7 @@ import LlmSettings from './pages/LlmSettings'
 import PetSettings from './pages/PetSettings'
 import HistoryPage from './pages/HistoryPage'
 import McpSettings from './pages/McpSettings'
+import ShortcutSettings from './pages/ShortcutSettings'
 import './styles.css'
 
 const routerBasename = import.meta.env.DEV ? '/config' : '/'
@@ -18,6 +19,7 @@ function Layout() {
           <NavLink to="/pet">宠物</NavLink>
           <NavLink to="/history">历史记忆</NavLink>
           <NavLink to="/mcp">MCP / Skill</NavLink>
+          <NavLink to="/shortcuts">快捷键</NavLink>
         </nav>
       </aside>
       <main>
@@ -26,6 +28,7 @@ function Layout() {
           <Route path="/pet" element={<PetSettings />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/mcp" element={<McpSettings />} />
+          <Route path="/shortcuts" element={<ShortcutSettings />} />
         </Routes>
       </main>
     </div>

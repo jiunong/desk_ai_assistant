@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
+import { basename } from 'path'
 import { ParsedFile, ChatMessage, ChatSession } from '../../shared/types'
 
 const sessions = new Map<string, ChatSession>()
@@ -55,6 +56,25 @@ export function getSessionSnapshot(sessionId: string): ChatSession | undefined {
   return structuredClone(session)
 }
 
-export function deleteSession(sessionId: string): void {
-  sessions.delete(sessionId)
+export function resolveAttachmentPath(sessionId: string, fileName: string): string | null {
+  const session = sessions.get(sessionId)
+  if (!session) return null
+
+  for (const message of session.messages) {
+    if (!message.attachedFileNames?.length || !message.attachedFilePaths?.length) continue
+    const index = message.attachedFileNames.indexOf(fileName)
+    if (index >= 0 && message.attachedFilePaths[index]) {
+      return message.attachedFilePaths[index]
+    }
+  }
+
+  for (const path of session.filePaths) {
+    if (basename(path) === fileName) return path
+  }
+
+  for (const file of session.files) {
+    if (file.name === fileName) return file.path
+  }
+
+  return null
 }

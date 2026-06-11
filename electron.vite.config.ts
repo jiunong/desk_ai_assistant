@@ -20,7 +20,8 @@ export default defineConfig({
         input: {
           pet: resolve(__dirname, 'src/preload/pet.ts'),
           dialog: resolve(__dirname, 'src/preload/dialog.ts'),
-          config: resolve(__dirname, 'src/preload/config.ts')
+          config: resolve(__dirname, 'src/preload/config.ts'),
+          screenshot: resolve(__dirname, 'src/preload/screenshot.ts')
         }
       }
     }
@@ -41,7 +42,8 @@ export default defineConfig({
         input: {
           pet: resolve(__dirname, 'src/renderer/pet/index.html'),
           dialog: resolve(__dirname, 'src/renderer/dialog/index.html'),
-          config: resolve(__dirname, 'src/renderer/config/index.html')
+          config: resolve(__dirname, 'src/renderer/config/index.html'),
+          screenshot: resolve(__dirname, 'src/renderer/screenshot/index.html')
         }
       }
     },

@@ -7,6 +7,7 @@ import { getPetWindowSize } from './pet-window'
 let petWindow: BrowserWindow | null = null
 let configWindow: BrowserWindow | null = null
 const dialogWindows = new Map<string, BrowserWindow>()
+let lastFocusedDialogKey: string | null = null
 let petAllowClose = false
 let onPetVisibilityChange: (() => void) | null = null
 
@@ -22,6 +23,8 @@ export interface DialogInitPayload {
   messages: ChatMessage[]
   fileNames: string[]
   meta?: { usedSkills?: string[]; usedMcpTools?: string[] }
+  pendingFilePaths?: string[]
+  pendingInputText?: string
 }
 
 function preloadPath(name: string): string {
@@ -174,6 +177,10 @@ export function showDialogWindow(payload: DialogInitPayload): Promise<BrowserWin
 
   dialogWindows.set(windowKey, win)
 
+  win.on('focus', () => {
+    lastFocusedDialogKey = windowKey
+  })
+
   win.on('closed', () => {
     dialogWindows.delete(windowKey)
     syncPetStateAfterDialogs()
@@ -212,6 +219,48 @@ export function sendPetState(state: string): void {
 
 export function sendPetError(message: string): void {
   petWindow?.webContents.send('pet:error', message)
+}
+
+export function attachFilesToActiveDialog(
+  filePaths: string[],
+  inputText?: string
+): boolean {
+  if (!filePaths.length && !inputText) return false
+
+  const payload = { filePaths, ...(inputText ? { inputText } : {}) }
+
+  for (const win of dialogWindows.values()) {
+    if (!win.isDestroyed() && win.isFocused()) {
+      win.webContents.send('dialog:attachFiles', payload)
+      win.show()
+      win.focus()
+      return true
+    }
+  }
+
+  if (lastFocusedDialogKey) {
+    const win = dialogWindows.get(lastFocusedDialogKey)
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('dialog:attachFiles', payload)
+      win.show()
+      win.focus()
+      return true
+    }
+  }
+
+  const first = dialogWindows.values().next().value
+  if (first && !first.isDestroyed()) {
+    first.webContents.send('dialog:attachFiles', payload)
+    first.show()
+    first.focus()
+    return true
+  }
+
+  return false
+}
+
+export function hasOpenDialog(): boolean {
+  return dialogWindows.size > 0
 }
 
 export function showConfigWindow(config: AppConfig): void {

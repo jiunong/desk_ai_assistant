@@ -7,6 +7,8 @@ export interface DialogInitPayload {
   messages: ChatMessage[]
   fileNames: string[]
   meta?: { usedSkills?: string[]; usedMcpTools?: string[] }
+  pendingFilePaths?: string[]
+  pendingInputText?: string
 }
 
 function subscribe<T>(channel: string, cb: (data: T) => void): () => void {
@@ -44,7 +46,14 @@ contextBridge.exposeInMainWorld('dialogApi', {  close: () => ipcRenderer.send('d
       usedMcpTools?: string[]
       usedSkills?: string[]
     }) => void
-  ) => subscribe('dialog:streamEnd', cb),  chat: (sessionId: string, message: string, filePaths?: string[]) =>
+  ) => subscribe('dialog:streamEnd', cb),
+  onAttachFiles: (cb: (data: { filePaths: string[]; inputText?: string }) => void) =>
+    subscribe('dialog:attachFiles', cb),
+  takeScreenshot: () => ipcRenderer.invoke('dialog:takeScreenshot') as Promise<{ ok: boolean; error?: string; cancelled?: boolean }>,
+  previewFile: (filePath: string) => ipcRenderer.invoke('dialog:previewFile', filePath),
+  resolveAttachmentPath: (sessionId: string, fileName: string) =>
+    ipcRenderer.invoke('dialog:resolveAttachmentPath', sessionId, fileName) as Promise<string | null>,
+  chat: (sessionId: string, message: string, filePaths?: string[]) =>
     ipcRenderer.invoke('dialog:chat', sessionId, message, filePaths) as Promise<{
       reply: string
       usedMcpTools: string[]

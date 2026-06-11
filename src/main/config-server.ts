@@ -8,7 +8,7 @@ import { mcpManager } from './services/mcp-manager'
 
 let server: ReturnType<express.Application['listen']> | null = null
 
-const SPA_ROUTES = ['/', '/pet', '/history', '/mcp']
+const SPA_ROUTES = ['/', '/pet', '/history', '/mcp', '/shortcuts']
 
 function mergeConfig(current: AppConfig, incoming: Partial<AppConfig>): AppConfig {
   return {
@@ -20,7 +20,8 @@ function mergeConfig(current: AppConfig, incoming: Partial<AppConfig>): AppConfi
     memory: { ...current.memory, ...incoming.memory },
     mcp: incoming.mcp ?? current.mcp,
     skills: incoming.skills ?? current.skills,
-    configServer: { ...current.configServer, ...incoming.configServer }
+    configServer: { ...current.configServer, ...incoming.configServer },
+    shortcuts: { ...current.shortcuts, ...incoming.shortcuts }
   }
 }
 

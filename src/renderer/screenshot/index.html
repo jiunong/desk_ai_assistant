@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>截图</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        user-select: none;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body.select-mode {
+        cursor: crosshair;
+      }
+
+      body.preview-mode {
+        cursor: default;
+      }
+
+      #phase-select {
+        position: fixed;
+        inset: 0;
+      }
+
+      #overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+      }
+
+      #selection {
+        position: fixed;
+        border: 2px solid #ff8c42;
+        background: rgba(255, 140, 66, 0.12);
+        display: none;
+        pointer-events: none;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+      }
+
+      #hint,
+      #capturing-hint {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 8px 16px;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.65);
+        color: #fff;
+        font: 14px/1.5 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        pointer-events: none;
+        z-index: 2;
+      }
+
+      #capturing-hint {
+        display: none;
+      }
+
+      #size-label {
+        position: fixed;
+        padding: 4px 8px;
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.75);
+        color: #fff;
+        font: 12px 'Consolas', monospace;
+        display: none;
+        pointer-events: none;
+        z-index: 2;
+      }
+
+      #phase-preview {
+        position: fixed;
+        inset: 0;
+        display: none;
+        background: rgba(0, 0, 0, 0.45);
+      }
+
+      #preview-panel {
+        position: fixed;
+        display: flex;
+        flex-direction: column;
+        min-width: 320px;
+        min-height: 280px;
+        max-width: calc(100vw - 32px);
+        max-height: calc(100vh - 32px);
+        border-radius: 12px;
+        overflow: hidden;
+        background: #fff;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      #preview-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        background: linear-gradient(135deg, #2d3436, #1e272e);
+        color: #fff;
+        font: 13px/1.4 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        cursor: move;
+      }
+
+      #preview-size {
+        font: 12px 'Consolas', monospace;
+        color: rgba(255, 255, 255, 0.75);
+      }
+
+      #editor-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 10px;
+        background: #f5f6fa;
+        border-bottom: 1px solid #eee;
+      }
+
+      #editor-toolbar button {
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: 1px solid #dfe6e9;
+        background: #fff;
+        font: 12px 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        cursor: pointer;
+        color: #2d3436;
+      }
+
+      #editor-toolbar button.active {
+        border-color: #ff8c42;
+        background: #fff3e6;
+        color: #e67e22;
+      }
+
+      #editor-toolbar button:hover {
+        border-color: #ffb347;
+      }
+
+      #btn-undo {
+        margin-left: auto;
+      }
+
+      #preview-image-wrap {
+        position: relative;
+        flex: 1;
+        min-height: 120px;
+        background: #e9ecef;
+        overflow: hidden;
+      }
+
+      #preview-image {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        pointer-events: none;
+      }
+
+      #annotation-canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        cursor: crosshair;
+      }
+
+      #annotation-canvas.tool-text {
+        cursor: text;
+      }
+
+      #text-editor {
+        position: absolute;
+        display: none;
+        min-width: 120px;
+        padding: 4px 8px;
+        border: 2px solid #ff8c42;
+        border-radius: 4px;
+        font: 14px 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        outline: none;
+        user-select: text;
+        z-index: 5;
+        background: rgba(255, 255, 255, 0.95);
+      }
+
+      #caption-row {
+        padding: 8px 10px;
+        background: #fafafa;
+        border-top: 1px solid #eee;
+      }
+
+      #caption-input {
+        width: 100%;
+        min-height: 48px;
+        max-height: 80px;
+        padding: 8px 10px;
+        border: 1px solid #dfe6e9;
+        border-radius: 8px;
+        resize: vertical;
+        font: 13px/1.5 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        user-select: text;
+      }
+
+      #caption-input:focus {
+        outline: none;
+        border-color: #ff8c42;
+      }
+
+      #preview-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 10px 12px;
+        background: #fafafa;
+        border-top: 1px solid #eee;
+      }
+
+      #preview-actions button {
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: none;
+        font: 13px 'Segoe UI', 'Microsoft YaHei', sans-serif;
+        cursor: pointer;
+      }
+
+      #btn-cancel {
+        background: #ecf0f1;
+        color: #2d3436;
+      }
+
+      #btn-cancel:hover {
+        background: #dfe6e9;
+      }
+
+      #btn-send {
+        background: linear-gradient(135deg, #ff8c42, #ffb347);
+        color: #fff;
+      }
+
+      #btn-send:hover {
+        filter: brightness(1.05);
+      }
+
+      #resize-handle {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 18px;
+        height: 18px;
+        cursor: nwse-resize;
+        background: linear-gradient(135deg, transparent 50%, #ff8c42 50%);
+        border-bottom-right-radius: 12px;
+      }
+    </style>
+  </head>
+  <body class="select-mode">
+    <div id="phase-select">
+      <div id="overlay"></div>
+      <div id="selection"></div>
+      <div id="hint">拖拽选择截图区域，Enter 确认，Esc 取消</div>
+      <div id="capturing-hint">正在截取屏幕…</div>
+      <div id="size-label"></div>
+    </div>
+
+    <div id="phase-preview">
+      <div id="preview-panel">
+        <div id="preview-header">
+          <span>拖动标题栏移动，右下角缩放；标注后发送到对话</span>
+          <span id="preview-size"></span>
+        </div>
+        <div id="editor-toolbar">
+          <button type="button" data-tool="rect" class="active">矩形</button>
+          <button type="button" data-tool="circle">圆形</button>
+          <button type="button" data-tool="text">文字</button>
+          <button type="button" id="btn-undo">撤销</button>
+        </div>
+        <div id="preview-image-wrap">
+          <img id="preview-image" alt="截图预览" />
+          <canvas id="annotation-canvas"></canvas>
+          <input id="text-editor" type="text" placeholder="输入文字，Enter 确认" />
+        </div>
+        <div id="caption-row">
+          <textarea
+            id="caption-input"
+            placeholder="发送到对话的文字（可选，使用文字工具会自动填入）"
+          ></textarea>
+        </div>
+        <div id="preview-actions">
+          <button type="button" id="btn-cancel">取消</button>
+          <button type="button" id="btn-send">发送到对话</button>
+        </div>
+        <div id="resize-handle"></div>
+      </div>
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

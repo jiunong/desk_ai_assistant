@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '../../shared/types'
 import { collectFilePaths, FILE_ACCEPT, fileNameFromPath } from './dialog-files'
+import AttachmentPreview, { type AttachmentPreviewTarget } from './AttachmentPreview'
+import { isImagePath } from './attachment-utils'
 import MarkdownContent from './MarkdownContent'
 import WindowResizeHandles from './WindowResizeHandles'
 
@@ -17,6 +19,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [meta, setMeta] = useState<{ usedSkills?: string[]; usedMcpTools?: string[] }>({})
+  const [previewTarget, setPreviewTarget] = useState<AttachmentPreviewTarget | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const sessionIdRef = useRef(sessionId)
@@ -82,24 +85,6 @@ export default function App() {
     })
   }
 
-  useEffect(() => {
-    return window.dialogApi.onInit((payload) => {
-      sessionIdRef.current = payload.sessionId
-      setSessionId(payload.sessionId)
-      setFileNames(payload.fileNames)
-      setMessages(payload.messages)
-      setMeta(payload.meta ?? {})
-      const last = payload.messages[payload.messages.length - 1]
-      if (last?.role === 'assistant' && !last.content) {
-        setLoading(true)
-      }
-    })
-  }, [])
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages, loading])
-
   const appendPendingPaths = useCallback((paths: string[]) => {
     if (!paths.length) return
     setPendingFiles((prev) => {
@@ -111,6 +96,37 @@ export default function App() {
     })
     setError('')
   }, [])
+
+  useEffect(() => {
+    return window.dialogApi.onInit((payload) => {
+      sessionIdRef.current = payload.sessionId
+      setSessionId(payload.sessionId)
+      setFileNames(payload.fileNames)
+      setMessages(payload.messages)
+      setMeta(payload.meta ?? {})
+      if (payload.pendingFilePaths?.length) {
+        appendPendingPaths(payload.pendingFilePaths)
+      }
+      if (payload.pendingInputText) {
+        setInput(payload.pendingInputText)
+      }
+      const last = payload.messages[payload.messages.length - 1]
+      if (last?.role === 'assistant' && !last.content) {
+        setLoading(true)
+      }
+    })
+  }, [appendPendingPaths])
+
+  useEffect(() => {
+    return window.dialogApi.onAttachFiles(({ filePaths, inputText }) => {
+      appendPendingPaths(filePaths)
+      if (inputText) setInput(inputText)
+    })
+  }, [appendPendingPaths])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages, loading])
 
   const addFiles = useCallback(
     async (fileList: File[]) => {
@@ -195,7 +211,12 @@ export default function App() {
       role: 'user',
       content: displayContent,
       createdAt: new Date().toISOString(),
-      ...(files.length ? { attachedFileNames: files.map(fileNameFromPath) } : {})
+      ...(files.length
+        ? {
+            attachedFileNames: files.map(fileNameFromPath),
+            attachedFilePaths: files
+          }
+        : {})
     }
     setMessages((prev) => [
       ...prev,
@@ -244,6 +265,40 @@ export default function App() {
     }
   }
 
+  const onScreenshot = async () => {
+    if (loading) return
+    setError('')
+    const result = await window.dialogApi.takeScreenshot()
+    if (!result.ok && !result.cancelled && result.error) {
+      setError(result.error)
+    }
+  }
+
+  const openMessageAttachmentPreview = useCallback(
+    async (msg: ChatMessage, index: number) => {
+      const path = msg.attachedFilePaths?.[index]
+      if (path) {
+        setPreviewTarget({ type: 'path', path })
+        return
+      }
+
+      const name = msg.attachedFileNames?.[index]
+      if (!name || !sessionId) {
+        setError('无法预览该附件')
+        return
+      }
+
+      const resolved = await window.dialogApi.resolveAttachmentPath(sessionId, name)
+      if (resolved) {
+        setPreviewTarget({ type: 'path', path: resolved })
+        return
+      }
+
+      setError('附件文件不存在或已被删除')
+    },
+    [sessionId]
+  )
+
   const canSend = Boolean(input.trim() || pendingFiles.length)
 
   return (
@@ -278,16 +333,29 @@ export default function App() {
               {msg.attachedFileNames?.length ? (
                 <div className="msg-files">
                   {msg.attachedFileNames.map((name, j) => (
-                    <span key={j} className="msg-file-chip">
+                    <button
+                      key={j}
+                      type="button"
+                      className="msg-file-chip msg-file-chip-clickable"
+                      onClick={() => void openMessageAttachmentPreview(msg, j)}
+                      title="预览附件"
+                    >
                       📎 {name}
-                    </span>
+                    </button>
                   ))}
                 </div>
               ) : null}
               {msg.attachments?.length ? (
                 <div className="msg-images">
                   {msg.attachments.map((img, j) => (
-                    <img key={j} src={img.dataUrl} alt={img.name} className="msg-image" />
+                    <img
+                      key={j}
+                      src={img.dataUrl}
+                      alt={img.name}
+                      className="msg-image msg-image-clickable"
+                      title="点击预览"
+                      onClick={() => setPreviewTarget({ type: 'image', url: img.dataUrl, name: img.name })}
+                    />
                   ))}
                 </div>
               ) : null}
@@ -321,7 +389,32 @@ export default function App() {
             <div className="pending-files">
               {pendingFiles.map((path, i) => (
                 <div key={`${path}-${i}`} className="pending-file-chip">
-                  <span>📎 {fileNameFromPath(path)}</span>
+                  {isImagePath(path) ? (
+                    <button
+                      type="button"
+                      className="pending-file-thumb-btn"
+                      onClick={() => setPreviewTarget({ type: 'path', path })}
+                      title="预览"
+                    >
+                      🖼
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="pending-file-name"
+                    onClick={() => setPreviewTarget({ type: 'path', path })}
+                    title="预览附件"
+                  >
+                    📎 {fileNameFromPath(path)}
+                  </button>
+                  <button
+                    type="button"
+                    className="preview-file-btn"
+                    onClick={() => setPreviewTarget({ type: 'path', path })}
+                    title="预览"
+                  >
+                    预览
+                  </button>
                   <button
                     type="button"
                     className="remove-file-btn"
@@ -339,7 +432,7 @@ export default function App() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             onPaste={onPaste}
-            placeholder="继续提问，可拖入/粘贴/添加文件与图片…（Enter 发送，Shift+Enter 换行）"
+            placeholder="继续提问，可拖入/粘贴/截图添加图片…（Enter 发送，Shift+Enter 换行）"
             rows={2}
             disabled={loading}
           />
@@ -352,6 +445,15 @@ export default function App() {
               hidden
               onChange={onPickFiles}
             />
+            <button
+              type="button"
+              className="attach-btn"
+              onClick={() => void onScreenshot()}
+              disabled={loading}
+              title="区域截图并添加到待发送附件"
+            >
+              截图
+            </button>
             <button
               type="button"
               className="attach-btn"
@@ -370,6 +472,8 @@ export default function App() {
           <button onClick={() => window.dialogApi.close()}>关闭</button>
         </div>
       )}
+
+      <AttachmentPreview target={previewTarget} onClose={() => setPreviewTarget(null)} />
     </div>
   )
 }

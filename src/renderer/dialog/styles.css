@@ -377,6 +377,182 @@ body,
   white-space: nowrap;
 }
 
+.pending-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pending-file-name:hover {
+  color: #e67e22;
+  text-decoration: underline;
+}
+
+.pending-file-thumb-btn {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(255, 140, 66, 0.15);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.preview-file-btn {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: #e67e22;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.preview-file-btn:hover {
+  text-decoration: underline;
+}
+
+.attachment-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  -webkit-app-region: no-drag;
+}
+
+.attachment-preview-modal {
+  width: min(920px, 96vw);
+  max-height: 90vh;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.attachment-preview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(90deg, #ffb347, #ff8c42);
+  color: #fff;
+}
+
+.attachment-preview-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.attachment-preview-meta {
+  font-size: 11px;
+  opacity: 0.9;
+  margin-top: 4px;
+}
+
+.attachment-preview-close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.attachment-preview-body {
+  flex: 1;
+  min-height: 200px;
+  max-height: calc(90vh - 64px);
+  overflow: auto;
+  padding: 16px;
+  background: #fafafa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.attachment-preview-loading,
+.attachment-preview-error {
+  font-size: 14px;
+  color: #666;
+  padding: 24px;
+}
+
+.attachment-preview-error {
+  color: #c0392b;
+}
+
+.attachment-preview-image {
+  max-width: 100%;
+  max-height: calc(90vh - 120px);
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+}
+
+.attachment-preview-text {
+  width: 100%;
+  align-self: stretch;
+  max-height: calc(90vh - 120px);
+  overflow: auto;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  font: 13px/1.6 Consolas, 'Segoe UI', 'Microsoft YaHei', monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #333;
+}
+
+.attachment-preview-unsupported {
+  text-align: center;
+  padding: 32px 24px;
+  color: #555;
+}
+
+.attachment-preview-file-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.attachment-preview-hint {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #888;
+  line-height: 1.6;
+}
+
+.msg-image-clickable {
+  cursor: zoom-in;
+}
+
+.msg-image-clickable:hover {
+  opacity: 0.92;
+  box-shadow: 0 2px 12px rgba(255, 140, 66, 0.35);
+}
+
 .remove-file-btn {
   flex-shrink: 0;
   width: 18px;
@@ -405,6 +581,17 @@ body,
   border: 1px solid #ffd4a8;
   font-size: 12px;
   color: #5a3e2b;
+}
+
+.msg-file-chip-clickable {
+  cursor: pointer;
+  font: inherit;
+}
+
+.msg-file-chip-clickable:hover {
+  border-color: #ff8c42;
+  color: #e67e22;
+  background: #fff3e6;
 }
 
 .chat-input-area textarea {

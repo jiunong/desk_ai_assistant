@@ -35,6 +35,12 @@ export interface AppConfig {
   configServer: {
     port: number
   }
+  shortcuts: {
+    openConfig: string
+    openChat: string
+    screenshot: string
+    togglePet: string
+  }
 }
 
 export interface McpServerConfig {
@@ -83,6 +89,8 @@ export interface ChatMessage {
   attachments?: ImageAttachment[]
   /** 本轮附带的文件名（展示用） */
   attachedFileNames?: string[]
+  /** 本轮附带的文件路径（预览用） */
+  attachedFilePaths?: string[]
 }
 
 export interface ChatSession {
@@ -159,5 +167,11 @@ export const DEFAULT_CONFIG: AppConfig = {
   },
   configServer: {
     port: 4789
+  },
+  shortcuts: {
+    openConfig: 'CommandOrControl+Shift+,',
+    openChat: 'CommandOrControl+Shift+C',
+    screenshot: 'CommandOrControl+Shift+S',
+    togglePet: 'CommandOrControl+Shift+P'
   }
 }

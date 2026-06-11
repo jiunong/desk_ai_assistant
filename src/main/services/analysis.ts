@@ -26,7 +26,8 @@ import {
   appendMessage,
   createSession,
   getSession,
-  getSessionSnapshot
+  getSessionSnapshot,
+  resolveAttachmentPath as findAttachmentPath
 } from './session-store'
 import { skillManager } from './skill-manager'
 
@@ -60,6 +61,10 @@ export class AnalysisService {
 
   getSession(sessionId: string) {
     return getSessionSnapshot(sessionId)
+  }
+
+  resolveAttachmentPath(sessionId: string, fileName: string): string | null {
+    return findAttachmentPath(sessionId, fileName)
   }
 
   openDirectChat(): { sessionId: string; welcome: string } {
@@ -97,7 +102,13 @@ export class AnalysisService {
         sessionId: session.id,
         title: fileTitle,
         messages: [
-          { role: 'user', content: displayUserMsg, createdAt: now },
+          {
+            role: 'user',
+            content: displayUserMsg,
+            createdAt: now,
+            attachedFileNames: fileNames,
+            attachedFilePaths: valid
+          },
           { role: 'assistant', content: '', createdAt: now }
         ],
         fileNames,
@@ -146,6 +157,8 @@ export class AnalysisService {
       role: 'user',
       content: displayUserMsg,
       createdAt: now,
+      attachedFileNames: fileNames,
+      attachedFilePaths: valid,
       ...(imageAttachments.length ? { attachments: imageAttachments } : {})
     })
 
@@ -202,11 +215,13 @@ export class AnalysisService {
     }
 
     let newFiles: ParsedFile[] = []
+    let newFilePaths: string[] = []
     if (filePaths?.length) {
       const { valid, errors } = validateFiles(filePaths, this.config)
       if (!valid.length) {
         throw new Error(errors.join('\n') || '没有有效文件')
       }
+      newFilePaths = valid
       newFiles = await parseFiles(valid)
       addSessionFiles(sessionId, valid, newFiles)
     }
@@ -226,7 +241,12 @@ export class AnalysisService {
       role: 'user',
       content: displayContent,
       createdAt: now,
-      ...(newFiles.length ? { attachedFileNames: newFiles.map((f) => f.name) } : {}),
+      ...(newFiles.length
+        ? {
+            attachedFileNames: newFiles.map((f) => f.name),
+            attachedFilePaths: newFilePaths
+          }
+        : {}),
       ...(imageAttachments.length ? { attachments: imageAttachments } : {})
     })
 

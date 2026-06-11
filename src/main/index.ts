@@ -2,7 +2,7 @@ import { app, ipcMain, Menu, Tray, nativeImage } from 'electron'
 
 import { join } from 'path'
 
-import { AppConfig } from '../shared/types'
+import { AppConfig, DEFAULT_CONFIG } from '../shared/types'
 
 import { startConfigServer, stopConfigServer } from './config-server'
 
@@ -18,6 +18,9 @@ import { skillManager } from './services/skill-manager'
 
 import { LlmService } from './services/llm'
 import { saveTempFiles } from './services/temp-files'
+import { previewFile } from './services/file-preview'
+import { shortcutManager } from './services/shortcut-manager'
+import { isScreenshotActive, startScreenshotCapture } from './services/screenshot'
 
 import {
   createPetWindow,
@@ -36,7 +39,8 @@ import {
   sendToDialogSession,
   resizePetWindow,
   setPetVisibilityListener,
-  destroyConfigWindowForQuit
+  destroyConfigWindowForQuit,
+  attachFilesToActiveDialog
 } from './windows'
 
 
@@ -70,11 +74,13 @@ function applyConfig(newConfig: AppConfig): void {
 
   broadcastPetConfig()
 
+  applyShortcuts()
+
 }
 
 
 
-function handleOpenDirectChat(): void {
+function handleOpenDirectChat(pendingFilePaths?: string[], pendingInputText?: string): void {
   sendPetState('talking')
   const { sessionId, welcome } = analysisService.openDirectChat()
   const index = getOpenDialogCount() + 1
@@ -83,7 +89,39 @@ function handleOpenDirectChat(): void {
     title: index > 1 ? `与小智对话 #${index}` : '与小智对话',
     messages: [{ role: 'assistant', content: welcome, createdAt: new Date().toISOString() }],
     fileNames: [],
-    meta: {}
+    meta: {},
+    ...(pendingFilePaths?.length ? { pendingFilePaths } : {}),
+    ...(pendingInputText ? { pendingInputText } : {})
+  })
+}
+
+function deliverScreenshotToDialog(filePath: string, text?: string): void {
+  if (attachFilesToActiveDialog([filePath], text)) return
+  handleOpenDirectChat([filePath], text)
+}
+
+function handleScreenshot(): void {
+  if (isScreenshotActive()) return
+
+  startScreenshotCapture(
+    (filePath, text) => deliverScreenshotToDialog(filePath, text),
+    (msg) => sendPetError(msg)
+  )
+}
+
+function applyShortcuts(): void {
+  shortcutManager.apply(config, {
+    openConfig: () => showConfigWindow(config),
+    openChat: () => handleOpenDirectChat(),
+    screenshot: () => handleScreenshot(),
+    togglePet: () => {
+      if (isPetWindowVisible()) {
+        hidePetWindow()
+      } else {
+        showPetWindow(config)
+      }
+      refreshTrayMenu()
+    }
   })
 }
 
@@ -211,7 +249,7 @@ function setupIpc(): void {
 
   ipcMain.handle('config:save', (_e, partial: Partial<AppConfig>) => {
 
-    config = { ...config, ...partial, llm: { ...config.llm, ...partial.llm }, pet: { ...config.pet, ...partial.pet }, files: { ...config.files, ...partial.files }, memory: { ...config.memory, ...partial.memory }, mcp: partial.mcp ?? config.mcp, skills: partial.skills ?? config.skills, configServer: { ...config.configServer, ...partial.configServer } }
+    config = { ...config, ...partial, llm: { ...config.llm, ...partial.llm }, pet: { ...config.pet, ...partial.pet }, files: { ...config.files, ...partial.files }, memory: { ...config.memory, ...partial.memory }, mcp: partial.mcp ?? config.mcp, skills: partial.skills ?? config.skills, configServer: { ...config.configServer, ...partial.configServer }, shortcuts: { ...config.shortcuts, ...partial.shortcuts } }
 
     saveConfig(config)
 
@@ -263,6 +301,35 @@ function setupIpc(): void {
       }
     }
   )
+
+  ipcMain.handle('dialog:resolveAttachmentPath', (_e, sessionId: string, fileName: string) => {
+    return analysisService.resolveAttachmentPath(sessionId, fileName)
+  })
+
+  ipcMain.handle('dialog:previewFile', (_e, filePath: string) => {
+    return previewFile(filePath)
+  })
+
+  ipcMain.handle('dialog:takeScreenshot', () => {
+    return new Promise<{ ok: boolean; error?: string; cancelled?: boolean }>((resolve) => {
+      if (isScreenshotActive()) {
+        resolve({ ok: false, error: '截图进行中，请稍候' })
+        return
+      }
+
+      startScreenshotCapture(
+        (filePath, text) => {
+          if (attachFilesToActiveDialog([filePath], text)) {
+            resolve({ ok: true })
+          } else {
+            resolve({ ok: false, error: '未找到可用的对话窗口' })
+          }
+        },
+        (msg) => resolve({ ok: false, error: msg }),
+        () => resolve({ ok: false, cancelled: true })
+      )
+    })
+  })
 }
 
 
@@ -316,6 +383,10 @@ app.whenReady().then(async () => {
 
   if (config.llm.enableMcpTools === undefined) config.llm.enableMcpTools = true
 
+  if (!config.shortcuts) {
+    config.shortcuts = { ...DEFAULT_CONFIG.shortcuts }
+  }
+
   if (config.skills.enabled.length === 0) {
 
     config.skills.enabled = ['doc-summarize', 'doc-compare']
@@ -342,6 +413,8 @@ app.whenReady().then(async () => {
 
   createTray()
 
+  applyShortcuts()
+
 })
 
 
@@ -353,6 +426,7 @@ app.on('window-all-closed', () => {
 
 
 app.on('before-quit', async () => {
+  shortcutManager.unregisterAll()
   destroyPetWindowForQuit()
   destroyAllDialogWindowsForQuit()
   destroyConfigWindowForQuit()
